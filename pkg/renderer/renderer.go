@@ -57,18 +57,27 @@ func (r *Renderer) Render(bounds ScreenBounds) *image.RGBA {
 		Max: math.Point3D{X: float64(bounds.MaxX) / float64(r.Width), Y: float64(bounds.MaxY) / float64(r.Height), Z: 15.0},
 	}
 
-	r.subdivide(initialAABB, bounds, img)
+	// Cull shapes to a primary list for this tile.
+	worldAABB := r.getWorldAABB(initialAABB)
+	primaryShapes := make([]geometry.Shape, 0)
+	for _, s := range r.Shapes {
+		if s.Intersects(worldAABB) {
+			primaryShapes = append(primaryShapes, s)
+		}
+	}
+
+	r.subdivide(initialAABB, bounds, img, primaryShapes, r.Shapes)
 
 	return img
 }
 
 // subdivide is the core recursive rendering function.
-func (r *Renderer) subdivide(aabb math.AABB3D, bounds ScreenBounds, img *image.RGBA) {
+func (r *Renderer) subdivide(aabb math.AABB3D, bounds ScreenBounds, img *image.RGBA, primaryShapes []geometry.Shape, fullScene []geometry.Shape) {
 	worldAABB := r.getWorldAABB(aabb)
 
 	var hitShape geometry.Shape
 	anyHit := false
-	for _, s := range r.Shapes {
+	for _, s := range primaryShapes {
 		if s.Intersects(worldAABB) {
 			anyHit = true
 			hitShape = s // Simplification: Just consider the first hit
@@ -100,7 +109,7 @@ if (aabb.Max.X - aabb.Min.X) < r.MinSize {
 
                         if hitShape.Contains(worldP) {
                             norm := hitShape.NormalAtPoint(worldP)
-                            img.Set(tileX, tileY, shading.ShadedColor(worldP, norm, r.Camera.GetEye(), r.Light, hitShape, r.Shapes))
+                            img.Set(tileX, tileY, shading.ShadedColor(worldP, norm, r.Camera.GetEye(), r.Light, hitShape, fullScene))
                             break // Found the surface, move to next pixel
                         }
                     }
@@ -123,7 +132,7 @@ if (aabb.Max.X - aabb.Min.X) < r.MinSize {
 				r.subdivide(math.AABB3D{
 					Min: math.Point3D{X: xs[xi], Y: ys[yi], Z: zs[zi]},
 					Max: math.Point3D{X: xs[xi+1], Y: ys[yi+1], Z: zs[zi+1]},
-				}, bounds, img)
+				}, bounds, img, primaryShapes, fullScene)
 			}
 		}
 	}
