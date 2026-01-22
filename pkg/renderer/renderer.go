@@ -168,13 +168,6 @@ func (r *Renderer) subdivide(aabb math.AABB3D, bounds ScreenBounds, surfaceBuffe
 			for px := minX; px <= maxX; px++ {
 				if px >= bounds.MinX && px < bounds.MaxX && py >= bounds.MinY && py < bounds.MaxY {
 					tileX, tileY := px-bounds.MinX, py-bounds.MinY
-					currentData := surfaceBuffer[tileY][tileX]
-
-					// Skip if we've already found a closer surface for this pixel.
-					if currentData.Hit && aabb.Min.Z >= currentData.Depth {
-						continue
-					}
-
 					sx, sy := float64(px)/float64(r.Width), float64(py)/float64(r.Height)
 
 
