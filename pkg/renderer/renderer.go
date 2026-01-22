@@ -66,14 +66,10 @@ func (r *Renderer) Render(bounds ScreenBounds) *image.RGBA {
 		Max: math.Point3D{X: float64(bounds.MaxX) / float64(r.Width), Y: float64(bounds.MaxY) / float64(r.Height), Z: 15.0},
 	}
 
-	// Cull shapes to a primary list for this tile.
-	worldAABB := r.getWorldAABB(initialAABB)
-	primaryShapes := make([]geometry.Shape, 0)
-	for _, s := range r.Shapes {
-		if s.Intersects(worldAABB) {
-			primaryShapes = append(primaryShapes, s)
-		}
-	}
+	// Do not cull. AABB culling is incorrect for rotated shapes.
+	// The painter's algorithm with depth testing is the ground truth.
+	primaryShapes := make([]geometry.Shape, len(r.Shapes))
+	copy(primaryShapes, r.Shapes)
 
 	// Sort shapes from Furthest to Closest relative to the camera
 	sort.Slice(primaryShapes, func(i, j int) bool {
@@ -147,15 +143,8 @@ func (r *Renderer) Render(bounds ScreenBounds) *image.RGBA {
 
 // subdivide is the core recursive rendering function (Pass 1: Dicing).
 func (r *Renderer) subdivide(aabb math.AABB3D, bounds ScreenBounds, surfaceBuffer [][]SurfaceData, primaryShapes []geometry.Shape, fullScene []geometry.Shape) {
-	worldAABB := r.getWorldAABB(aabb)
-
-	intersectingShapes := make([]geometry.Shape, 0)
-	for _, s := range primaryShapes {
-		if s.Intersects(worldAABB) {
-			intersectingShapes = append(intersectingShapes, s)
-		}
-	}
-	if len(intersectingShapes) == 0 {
+	// Don't cull recursively. The primaryShapes list is the definitive set for this tile.
+	if len(primaryShapes) == 0 {
 		return
 	}
 
@@ -172,7 +161,7 @@ func (r *Renderer) subdivide(aabb math.AABB3D, bounds ScreenBounds, surfaceBuffe
 
 
 					// Fine-grind search: find the actual surface within this depth slice
-					for _, s := range intersectingShapes {
+					for _, s := range primaryShapes {
 						for i := 0; i < 8; i++ {
 							zSample := aabb.Min.Z + (aabb.Max.Z-aabb.Min.Z)*(float64(i)/7.0)
 
@@ -219,24 +208,3 @@ func (r *Renderer) subdivide(aabb math.AABB3D, bounds ScreenBounds, surfaceBuffe
 	}
 }
 
-func (r *Renderer) getWorldAABB(aabb math.AABB3D) math.AABB3D {
-	corners := []math.Point3D{
-		r.Camera.Project(aabb.Min.X, aabb.Min.Y, aabb.Min.Z),
-		r.Camera.Project(aabb.Max.X, aabb.Min.Y, aabb.Min.Z),
-		r.Camera.Project(aabb.Min.X, aabb.Max.Y, aabb.Min.Z),
-		r.Camera.Project(aabb.Max.X, aabb.Max.Y, aabb.Min.Z),
-		r.Camera.Project(aabb.Min.X, aabb.Min.Y, aabb.Max.Z),
-		r.Camera.Project(aabb.Max.X, aabb.Min.Y, aabb.Max.Z),
-		r.Camera.Project(aabb.Min.X, aabb.Max.Y, aabb.Max.Z),
-		r.Camera.Project(aabb.Max.X, aabb.Max.Y, aabb.Max.Z),
-		// Crucially, include the camera's eye to form a conservative frustum AABB
-		r.Camera.GetEye(),
-	}
-	minP := math.Point3D{X: gomath.Inf(1), Y: gomath.Inf(1), Z: gomath.Inf(1)}
-	maxP := math.Point3D{X: gomath.Inf(-1), Y: gomath.Inf(-1), Z: gomath.Inf(-1)}
-	for _, p := range corners {
-		minP.X, minP.Y, minP.Z = gomath.Min(minP.X, p.X), gomath.Min(minP.Y, p.Y), gomath.Min(minP.Z, p.Z)
-		maxP.X, maxP.Y, maxP.Z = gomath.Max(maxP.X, p.X), gomath.Max(maxP.Y, p.Y), gomath.Max(maxP.Z, p.Z)
-	}
-	return math.AABB3D{Min: minP, Max: maxP}
-}
