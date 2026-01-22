@@ -139,3 +139,219 @@ func (s Sphere3D) GetAABB() math.AABB3D {
 		Max: s.Center.Add(math.Point3D{X: s.Radius, Y: s.Radius, Z: s.Radius}),
 	}
 }
+
+// Box3D represents a solid box (AABB) in 3D space.
+type Box3D struct {
+	Min, Max          math.Point3D
+	Color             color.RGBA
+	Shininess         float64
+	SpecularIntensity float64
+	SpecularColor     color.RGBA
+}
+
+func (b Box3D) Contains(p math.Point3D) bool {
+	return p.X >= b.Min.X && p.X <= b.Max.X &&
+		p.Y >= b.Min.Y && p.Y <= b.Max.Y &&
+		p.Z >= b.Min.Z && p.Z <= b.Max.Z
+}
+
+func (b Box3D) Intersects(aabb math.AABB3D) bool {
+	// Standard AABB-AABB intersection
+	return (b.Min.X <= aabb.Max.X && b.Max.X >= aabb.Min.X) &&
+		(b.Min.Y <= aabb.Max.Y && b.Max.Y >= aabb.Min.Y) &&
+		(b.Min.Z <= aabb.Max.Z && b.Max.Z >= aabb.Min.Z)
+}
+
+func (b Box3D) NormalAtPoint(p math.Point3D) math.Normal3D {
+	// Find which face the point is closest to
+	eps := 0.0001
+	if gomath.Abs(p.X-b.Min.X) < eps {
+		return math.Normal3D{X: -1, Y: 0, Z: 0}
+	}
+	if gomath.Abs(p.X-b.Max.X) < eps {
+		return math.Normal3D{X: 1, Y: 0, Z: 0}
+	}
+	if gomath.Abs(p.Y-b.Min.Y) < eps {
+		return math.Normal3D{X: 0, Y: -1, Z: 0}
+	}
+	if gomath.Abs(p.Y-b.Max.Y) < eps {
+		return math.Normal3D{X: 0, Y: 1, Z: 0}
+	}
+	if gomath.Abs(p.Z-b.Min.Z) < eps {
+		return math.Normal3D{X: 0, Y: 0, Z: -1}
+	}
+	return math.Normal3D{X: 0, Y: 0, Z: 1}
+}
+
+// GetColor returns the color of the sphere.
+func (s Box3D) GetColor() color.RGBA { return s.Color }
+
+// GetShininess returns the shininess of the sphere.
+func (s Box3D) GetShininess() float64 { return s.Shininess }
+
+// GetSpecularIntensity returns the specular intensity of the sphere.
+func (s Box3D) GetSpecularIntensity() float64 { return s.SpecularIntensity }
+
+// GetSpecularColor returns the specular color of the sphere.
+func (s Box3D) GetSpecularColor() color.RGBA { return s.SpecularColor }
+
+func (b Box3D) GetAABB() math.AABB3D { return math.AABB3D{Min: b.Min, Max: b.Max} }
+
+type Cylinder3D struct {
+	Center            math.Point3D // Center of the base
+	Height, Radius    float64
+	Color             color.RGBA
+	Shininess         float64
+	SpecularIntensity float64
+	SpecularColor     color.RGBA
+}
+
+func (c Cylinder3D) Contains(p math.Point3D) bool {
+	if p.Y < c.Center.Y || p.Y > c.Center.Y+c.Height {
+		return false
+	}
+	dx, dz := p.X-c.Center.X, p.Z-c.Center.Z
+	return (dx*dx + dz*dz) <= c.Radius*c.Radius
+}
+
+func (c Cylinder3D) Intersects(aabb math.AABB3D) bool {
+	// Check Y-range first
+	if aabb.Min.Y > c.Center.Y+c.Height || aabb.Max.Y < c.Center.Y {
+		return false
+	}
+
+	// Check circle-AABB intersection in XZ plane
+	closestX := gomath.Max(aabb.Min.X, gomath.Min(c.Center.X, aabb.Max.X))
+	closestZ := gomath.Max(aabb.Min.Z, gomath.Min(c.Center.Z, aabb.Max.Z))
+
+	dx, dz := closestX-c.Center.X, closestZ-c.Center.Z
+	return (dx*dx + dz*dz) <= c.Radius*c.Radius
+}
+
+func (c Cylinder3D) NormalAtPoint(p math.Point3D) math.Normal3D {
+	eps := 0.0001
+	if p.Y >= c.Center.Y+c.Height-eps {
+		return math.Normal3D{X: 0, Y: 1, Z: 0}
+	}
+	if p.Y <= c.Center.Y+eps {
+		return math.Normal3D{X: 0, Y: -1, Z: 0}
+	}
+	n := math.Point3D{X: p.X - c.Center.X, Y: 0, Z: p.Z - c.Center.Z}.Normalize()
+	return math.Normal3D{X: n.X, Y: 0, Z: n.Z}
+}
+
+// GetColor returns the color of the sphere.
+func (s Cylinder3D) GetColor() color.RGBA { return s.Color }
+
+// GetShininess returns the shininess of the sphere.
+func (s Cylinder3D) GetShininess() float64 { return s.Shininess }
+
+// GetSpecularIntensity returns the specular intensity of the sphere.
+func (s Cylinder3D) GetSpecularIntensity() float64 { return s.SpecularIntensity }
+
+// GetSpecularColor returns the specular color of the sphere.
+func (s Cylinder3D) GetSpecularColor() color.RGBA { return s.SpecularColor }
+
+// GetAABB returns the bounding box of the cylinder.
+func (c Cylinder3D) GetAABB() math.AABB3D {
+	return math.AABB3D{
+		Min: math.Point3D{
+			X: c.Center.X - c.Radius,
+			Y: c.Center.Y,
+			Z: c.Center.Z - c.Radius,
+		},
+		Max: math.Point3D{
+			X: c.Center.X + c.Radius,
+			Y: c.Center.Y + c.Height,
+			Z: c.Center.Z + c.Radius,
+		},
+	}
+}
+
+type Cone3D struct {
+	Center            math.Point3D // Center of the circular base
+	Radius            float64
+	Height            float64
+	Color             color.RGBA
+	Shininess         float64
+	SpecularIntensity float64
+	SpecularColor     color.RGBA
+}
+
+func (c Cone3D) Contains(p math.Point3D) bool {
+	// Check height bounds
+	if p.Y < c.Center.Y || p.Y > c.Center.Y+c.Height {
+		return false
+	}
+
+	// Calculate relative height (0 at base, 1 at tip)
+	hRatio := (p.Y - c.Center.Y) / c.Height
+	// Radius at this specific height
+	currentRadius := c.Radius * (1.0 - hRatio)
+
+	dx, dz := p.X-c.Center.X, p.Z-c.Center.Z
+	return (dx*dx + dz*dz) <= currentRadius*currentRadius
+}
+
+func (c Cone3D) Intersects(aabb math.AABB3D) bool {
+	// 1. Check Y-range
+	if aabb.Min.Y > c.Center.Y+c.Height || aabb.Max.Y < c.Center.Y {
+		return false
+	}
+
+	// 2. Conservative Check: Use the cylinder AABB intersection logic
+	// We treat it as a cylinder of its base radius for the broad phase.
+	closestX := gomath.Max(aabb.Min.X, gomath.Min(c.Center.X, aabb.Max.X))
+	closestZ := gomath.Max(aabb.Min.Z, gomath.Min(c.Center.Z, aabb.Max.Z))
+
+	dx, dz := closestX-c.Center.X, closestZ-c.Center.Z
+	// If it doesn't even hit the base cylinder, it doesn't hit the cone
+	if (dx*dx + dz*dz) > c.Radius*c.Radius {
+		return false
+	}
+
+	// 3. Fine-grained check: Check if the closest point on AABB is inside the radius at that Y
+	// Use the Y-level of the AABB closest to the base
+	targetY := gomath.Max(aabb.Min.Y, c.Center.Y)
+	hRatio := (targetY - c.Center.Y) / c.Height
+	currentRadius := c.Radius * (1.0 - hRatio)
+
+	return (dx*dx + dz*dz) <= currentRadius*currentRadius
+}
+
+func (c Cone3D) NormalAtPoint(p math.Point3D) math.Normal3D {
+	eps := 0.0001
+	// Bottom cap
+	if p.Y <= c.Center.Y+eps {
+		return math.Normal3D{X: 0, Y: -1, Z: 0}
+	}
+
+	// Side normal: Slanted outward and slightly upward
+	dx, dz := p.X-c.Center.X, p.Z-c.Center.Z
+	horizontalDist := gomath.Sqrt(dx*dx + dz*dz)
+
+	// The slope of the cone side
+	slope := c.Radius / c.Height
+	n := math.Point3D{X: dx / horizontalDist, Y: slope, Z: dz / horizontalDist}.Normalize()
+	return math.Normal3D{X: n.X, Y: n.Y, Z: n.Z}
+}
+
+func (c Cone3D) GetAABB() math.AABB3D {
+	return math.AABB3D{
+		Min: math.Point3D{X: c.Center.X - c.Radius, Y: c.Center.Y, Z: c.Center.Z - c.Radius},
+		Max: math.Point3D{X: c.Center.X + c.Radius, Y: c.Center.Y + c.Height, Z: c.Center.Z + c.Radius},
+	}
+}
+
+// ... (Implement other getters)
+// GetColor returns the color of the sphere.
+func (s Cone3D) GetColor() color.RGBA { return s.Color }
+
+// GetShininess returns the shininess of the sphere.
+func (s Cone3D) GetShininess() float64 { return s.Shininess }
+
+// GetSpecularIntensity returns the specular intensity of the sphere.
+func (s Cone3D) GetSpecularIntensity() float64 { return s.SpecularIntensity }
+
+// GetSpecularColor returns the specular color of the sphere.
+func (s Cone3D) GetSpecularColor() color.RGBA { return s.SpecularColor }
