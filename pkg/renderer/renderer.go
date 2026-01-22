@@ -100,7 +100,7 @@ if (aabb.Max.X - aabb.Min.X) < r.MinSize {
 
                         if hitShape.Contains(worldP) {
                             norm := hitShape.NormalAtPoint(worldP)
-                            img.Set(tileX, tileY, shading.ShadedColor(worldP, norm, r.Light, hitShape.GetColor(), r.Shapes))
+                            img.Set(tileX, tileY, shading.ShadedColor(worldP, norm, r.Camera.GetEye(), r.Light, hitShape, r.Shapes))
                             break // Found the surface, move to next pixel
                         }
                     }

@@ -12,13 +12,19 @@ type Shape interface {
 	Intersects(aabb math.AABB3D) bool
 	NormalAtPoint(p math.Point3D) math.Normal3D
 	GetColor() color.RGBA
+	GetShininess() float64
+	GetSpecularIntensity() float64
+	GetSpecularColor() color.RGBA
 }
 
 // Plane3D represents an infinite plane in 3D space.
 type Plane3D struct {
-	Point  math.Point3D
-	Normal math.Normal3D
-	Color  color.RGBA
+	Point             math.Point3D
+	Normal            math.Normal3D
+	Color             color.RGBA
+	Shininess         float64
+	SpecularIntensity float64
+	SpecularColor     color.RGBA
 }
 
 // Contains checks if a point is "under" the plane (in the direction opposite the normal).
@@ -61,11 +67,23 @@ func (pl Plane3D) NormalAtPoint(p math.Point3D) math.Normal3D { return pl.Normal
 // GetColor returns the color of the plane.
 func (pl Plane3D) GetColor() color.RGBA { return pl.Color }
 
+// GetShininess returns the shininess of the plane.
+func (pl Plane3D) GetShininess() float64 { return pl.Shininess }
+
+// GetSpecularIntensity returns the specular intensity of the plane.
+func (pl Plane3D) GetSpecularIntensity() float64 { return pl.SpecularIntensity }
+
+// GetSpecularColor returns the specular color of the plane.
+func (pl Plane3D) GetSpecularColor() color.RGBA { return pl.SpecularColor }
+
 // Sphere3D represents a sphere in 3D space.
 type Sphere3D struct {
-	Center math.Point3D
-	Radius float64
-	Color  color.RGBA
+	Center            math.Point3D
+	Radius            float64
+	Color             color.RGBA
+	Shininess         float64
+	SpecularIntensity float64
+	SpecularColor     color.RGBA
 }
 
 // Contains checks if a point is inside the sphere.
@@ -94,3 +112,12 @@ func (s Sphere3D) NormalAtPoint(p math.Point3D) math.Normal3D {
 
 // GetColor returns the color of the sphere.
 func (s Sphere3D) GetColor() color.RGBA { return s.Color }
+
+// GetShininess returns the shininess of the sphere.
+func (s Sphere3D) GetShininess() float64 { return s.Shininess }
+
+// GetSpecularIntensity returns the specular intensity of the sphere.
+func (s Sphere3D) GetSpecularIntensity() float64 { return s.SpecularIntensity }
+
+// GetSpecularColor returns the specular color of the sphere.
+func (s Sphere3D) GetSpecularColor() color.RGBA { return s.SpecularColor }
