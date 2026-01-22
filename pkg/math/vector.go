@@ -54,3 +54,13 @@ func (n Normal3D) ToVector() Point3D {
 func (a Point3D) Mul(s float64) Point3D {
 	return Point3D{a.X * s, a.Y * s, a.Z * s}
 }
+
+// Add returns the vector sum of two points.
+func (a Point3D) Add(b Point3D) Point3D {
+	return Point3D{a.X + b.X, a.Y + b.Y, a.Z + b.Z}
+}
+
+// Distance returns the Euclidean distance between two points.
+func (a Point3D) Distance(b Point3D) float64 {
+	return math.Sqrt(math.Pow(a.X-b.X, 2) + math.Pow(a.Y-b.Y, 2) + math.Pow(a.Z-b.Z, 2))
+}

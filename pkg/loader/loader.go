@@ -22,6 +22,7 @@ type CameraConfig struct {
 type LightConfig struct {
 	Position  math.Point3D `json:"position"`
 	Intensity float64      `json:"intensity"`
+	Radius    *float64     `json:"radius,omitempty"`
 }
 
 type ShapeConfig struct {
@@ -61,9 +62,14 @@ func LoadScene(filepath string) (camera.Camera, []geometry.Shape, *shading.Light
 		config.Camera.Aspect,
 	)
 
+	radius := 0.0
+	if config.Light.Radius != nil {
+		radius = *config.Light.Radius
+	}
 	light := &shading.Light{
 		Position:  config.Light.Position,
 		Intensity: config.Light.Intensity,
+		Radius:    radius,
 	}
 
 	var shapes []geometry.Shape

@@ -11,51 +11,25 @@ import (
 type Light struct {
 	Position  math.Point3D
 	Intensity float64
+	Radius    float64
 }
 
 // ShadedColor calculates the color of a point on a surface, including basic shadowing and specular highlights.
-func ShadedColor(p math.Point3D, n math.Normal3D, eye math.Point3D, l Light, shape geometry.Shape, shapes []geometry.Shape) color.RGBA {
+func ShadedColor(p math.Point3D, n math.Normal3D, eye math.Point3D, l Light, shape geometry.Shape, shapes []geometry.Shape, rng *math.XorShift32) color.RGBA {
 	lightVec := l.Position.Sub(p)
 	lightDir := lightVec.Normalize()
 	base := shape.GetColor()
 
-	// Shadow Check: Offset the starting point slightly to avoid self-intersection.
-	shadowBias := 0.01
-	checkP := math.Point3D{X: p.X + n.X*shadowBias, Y: p.Y + n.Y*shadowBias, Z: p.Z + n.Z*shadowBias}
-
-	inShadow := false
-	// Trace towards the light (cheap volumetric shadow check).
-	for t := 0.1; t < 5.0; t += 0.2 {
-		sampleP := math.Point3D{X: checkP.X + lightDir.X*t, Y: checkP.Y + lightDir.Y*t, Z: checkP.Z + lightDir.Z*t}
-		for _, s := range shapes {
-			if s == shape {
-				continue
-			}
-			// Ignore planes for this specific simple shadow check to prevent infinite floor shadows.
-			if _, ok := s.(geometry.Plane3D); ok {
-				continue
-			}
-			if s.Contains(sampleP) {
-				inShadow = true
-				break
-			}
-		}
-		if inShadow {
-			break
-		}
-	}
+	shadowFactor := TraceShadow(p, n, l, shapes, rng)
 
 	// Diffuse (Lambert) component
 	dot := n.Dot(lightDir)
-	diffuseFactor := gomath.Max(0.15, dot) * l.Intensity // Ambient term is 0.15
+	diffuseFactor := gomath.Max(0.15, dot*shadowFactor) * l.Intensity
 
-	if inShadow {
-		diffuseFactor = 0.15 // Ambient only
-	}
 
 	// Specular (Phong) component
 	var specularR, specularG, specularB float64
-	if !inShadow { // No specular highlights in shadow
+	if shadowFactor > 0.2 { // No specular highlights in shadow
 		viewDir := eye.Sub(p).Normalize()
 
 		// R = 2 * (N . L) * N - L
@@ -83,4 +57,47 @@ func ShadedColor(p math.Point3D, n math.Normal3D, eye math.Point3D, l Light, sha
 		B: uint8(gomath.Min(255, finalB)),
 		A: 255,
 	}
+}
+
+func TraceShadow(p math.Point3D, n math.Normal3D, l Light, shapes []geometry.Shape, rng *math.XorShift32) float64 {
+	const numSamples = 8
+	shadowHits := 0.0
+
+	for i := 0; i < numSamples; i++ {
+		// Jitter the light position within its radius
+		jitter := math.Point3D{
+			X: (rng.Float64() - 0.5) * l.Radius,
+			Y: (rng.Float64() - 0.5) * l.Radius,
+			Z: (rng.Float64() - 0.5) * l.Radius,
+		}
+		targetPos := l.Position.Add(jitter)
+
+		dir := targetPos.Sub(p).Normalize()
+		distToLight := p.Distance(targetPos)
+
+		// Bias to prevent self-intersection
+		currentP := p.Add(n.ToVector().Mul(0.01))
+
+		hit := false
+		for t := 0.0; t < distToLight; t += 0.2 {
+			sampleP := currentP.Add(dir.Mul(t))
+			for _, s := range shapes {
+				if _, ok := s.(geometry.Plane3D); ok {
+					continue
+				}
+				if s.Contains(sampleP) {
+					hit = true
+					break
+				}
+			}
+			if hit {
+				break
+			}
+		}
+		if hit {
+			shadowHits += 1.0
+		}
+	}
+
+	return gomath.Max(0.2, 1.0-(shadowHits/float64(numSamples)))
 }

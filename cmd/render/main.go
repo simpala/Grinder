@@ -4,6 +4,7 @@ import (
 	"flag"
 	"fmt"
 	"grinder/pkg/loader"
+	"grinder/pkg/math"
 	"grinder/pkg/renderer"
 	"image"
 	"image/draw"
@@ -93,7 +94,9 @@ func main() {
 					MaxX: (x + 1) * tileWidth,
 					MaxY: (y + 1) * tileHeight,
 				}
-				tileImg := rndr.Render(bounds)
+				// Each tile gets its own PRNG instance.
+				rng := math.NewXorShift32(uint32(y*numTilesX + x))
+				tileImg := rndr.Render(bounds, rng)
 				renderedTiles <- RenderedTile{Bounds: bounds, Image: tileImg}
 			}(x, y)
 		}
