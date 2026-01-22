@@ -93,8 +93,30 @@ func (r *Renderer) Render(bounds ScreenBounds) *image.RGBA {
 					// We use the original hit point's depth (Z) for the sample ray
 					worldP := r.Camera.Project(sx, sy, surface.Depth)
 
+					// Jitter the light position for soft shadows
+					var jitteredLight shading.Light
+					if r.Light.Radius > 0 {
+						var offsetX, offsetY, offsetZ float64
+						// Rejection sampling for a uniform spherical distribution
+						for {
+							offsetX = (prng.NextFloat64()*2 - 1) * r.Light.Radius
+							offsetY = (prng.NextFloat64()*2 - 1) * r.Light.Radius
+							offsetZ = (prng.NextFloat64()*2 - 1) * r.Light.Radius
+							if offsetX*offsetX+offsetY*offsetY+offsetZ*offsetZ <= r.Light.Radius*r.Light.Radius {
+								break
+							}
+						}
+						jitteredLight = shading.Light{
+							Position:  r.Light.Position.Add(math.Point3D{X: offsetX, Y: offsetY, Z: offsetZ}),
+							Intensity: r.Light.Intensity,
+							Radius:    r.Light.Radius,
+						}
+					} else {
+						jitteredLight = r.Light
+					}
+
 					// Use the pre-calculated normal from the Dicer pass
-					finalColor := shading.ShadedColor(worldP, surface.N, r.Camera.GetEye(), r.Light, surface.S, r.Shapes)
+					finalColor := shading.ShadedColor(worldP, surface.N, r.Camera.GetEye(), jitteredLight, surface.S, r.Shapes)
 					rTotal += float64(finalColor.R)
 					gTotal += float64(finalColor.G)
 					bTotal += float64(finalColor.B)

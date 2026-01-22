@@ -15,6 +15,7 @@ type Shape interface {
 	GetShininess() float64
 	GetSpecularIntensity() float64
 	GetSpecularColor() color.RGBA
+	GetAABB() math.AABB3D
 }
 
 // Plane3D represents an infinite plane in 3D space.
@@ -76,6 +77,15 @@ func (pl Plane3D) GetSpecularIntensity() float64 { return pl.SpecularIntensity }
 // GetSpecularColor returns the specular color of the plane.
 func (pl Plane3D) GetSpecularColor() color.RGBA { return pl.SpecularColor }
 
+// GetAABB for a plane is infinite, so we return a huge box.
+func (pl Plane3D) GetAABB() math.AABB3D {
+	inf := gomath.Inf(1)
+	return math.AABB3D{
+		Min: math.Point3D{X: gomath.Inf(-1), Y: gomath.Inf(-1), Z: gomath.Inf(-1)},
+		Max: math.Point3D{X: inf, Y: inf, Z: inf},
+	}
+}
+
 // Sphere3D represents a sphere in 3D space.
 type Sphere3D struct {
 	Center            math.Point3D
@@ -121,3 +131,11 @@ func (s Sphere3D) GetSpecularIntensity() float64 { return s.SpecularIntensity }
 
 // GetSpecularColor returns the specular color of the sphere.
 func (s Sphere3D) GetSpecularColor() color.RGBA { return s.SpecularColor }
+
+// GetAABB returns the bounding box of the sphere.
+func (s Sphere3D) GetAABB() math.AABB3D {
+	return math.AABB3D{
+		Min: s.Center.Sub(math.Point3D{X: s.Radius, Y: s.Radius, Z: s.Radius}),
+		Max: s.Center.Add(math.Point3D{X: s.Radius, Y: s.Radius, Z: s.Radius}),
+	}
+}
