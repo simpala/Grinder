@@ -1,7 +1,7 @@
 package renderer
 
 import (
-	"grinder/internal/math"
+	"grinder/pkg/math"
 	"grinder/pkg/camera"
 	"grinder/pkg/geometry"
 	"grinder/pkg/shading"
@@ -23,7 +23,6 @@ type Renderer struct {
 	Width   int
 	Height  int
 	MinSize float64
-	img     *image.RGBA
 	bgColor color.RGBA
 }
 
@@ -41,10 +40,15 @@ func NewRenderer(cam camera.Camera, shapes []geometry.Shape, light shading.Light
 }
 
 // Render performs the recursive subdivision rendering for a specific screen area.
+// It returns a new image containing only the rendered tile.
 func (r *Renderer) Render(bounds ScreenBounds) *image.RGBA {
-	r.img = image.NewRGBA(image.Rect(0, 0, r.Width, r.Height))
-	for i := 0; i < len(r.img.Pix); i += 4 {
-		r.img.Pix[i], r.img.Pix[i+1], r.img.Pix[i+2], r.img.Pix[i+3] = r.bgColor.R, r.bgColor.G, r.bgColor.B, r.bgColor.A
+	tileWidth := bounds.MaxX - bounds.MinX
+	tileHeight := bounds.MaxY - bounds.MinY
+	img := image.NewRGBA(image.Rect(0, 0, tileWidth, tileHeight))
+
+	// Fill background
+	for i := 0; i < len(img.Pix); i += 4 {
+		img.Pix[i], img.Pix[i+1], img.Pix[i+2], img.Pix[i+3] = r.bgColor.R, r.bgColor.G, r.bgColor.B, r.bgColor.A
 	}
 
 	// Initial AABB for the specified screen bounds
@@ -53,12 +57,13 @@ func (r *Renderer) Render(bounds ScreenBounds) *image.RGBA {
 		Max: math.Point3D{X: float64(bounds.MaxX) / float64(r.Width), Y: float64(bounds.MaxY) / float64(r.Height), Z: 15.0},
 	}
 
-	r.subdivide(initialAABB)
+	r.subdivide(initialAABB, bounds, img)
 
-	return r.img
+	return img
 }
 
-func (r *Renderer) subdivide(aabb math.AABB3D) {
+// subdivide is the core recursive rendering function.
+func (r *Renderer) subdivide(aabb math.AABB3D, bounds ScreenBounds, img *image.RGBA) {
 	worldAABB := r.getWorldAABB(aabb)
 
 	var hitShape geometry.Shape
@@ -74,22 +79,26 @@ func (r *Renderer) subdivide(aabb math.AABB3D) {
 		return
 	}
 
+	// Base case: If the AABB is small enough, fill the pixels.
 	if (aabb.Max.X - aabb.Min.X) < r.MinSize {
 		minX, minY := int(aabb.Min.X*float64(r.Width)), int(aabb.Min.Y*float64(r.Height))
 		maxX, maxY := int(aabb.Max.X*float64(r.Width)), int(aabb.Max.Y*float64(r.Height))
 
 		for py := minY; py <= maxY; py++ {
 			for px := minX; px <= maxX; px++ {
-				if px >= 0 && px < r.Width && py >= 0 && py < r.Height {
+				// Render only pixels within the designated tile bounds.
+				if px >= bounds.MinX && px < bounds.MaxX && py >= bounds.MinY && py < bounds.MaxY {
+					tileX, tileY := px-bounds.MinX, py-bounds.MinY
+
 					// Check if pixel is still background
-					if r.img.RGBAAt(px, py) == r.bgColor {
+					if img.RGBAAt(tileX, tileY) == r.bgColor {
 						sx, sy := float64(px)/float64(r.Width), float64(py)/float64(r.Height)
 						zMid := (aabb.Min.Z + aabb.Max.Z) / 2
 						worldP := r.Camera.Project(sx, sy, zMid)
 
 						if hitShape.Contains(worldP) {
 							norm := hitShape.NormalAtPoint(worldP)
-							r.img.Set(px, py, shading.ShadedColor(worldP, norm, r.Light, hitShape.GetColor(), r.Shapes))
+							img.Set(tileX, tileY, shading.ShadedColor(worldP, norm, r.Light, hitShape.GetColor(), r.Shapes))
 						}
 					}
 				}
@@ -98,6 +107,7 @@ func (r *Renderer) subdivide(aabb math.AABB3D) {
 		return
 	}
 
+	// Recursive step: Subdivide the AABB into 8 smaller boxes.
 	mx, my, mz := (aabb.Min.X+aabb.Max.X)/2, (aabb.Min.Y+aabb.Max.Y)/2, (aabb.Min.Z+aabb.Max.Z)/2
 	xs := [3]float64{aabb.Min.X, mx, aabb.Max.X}
 	ys := [3]float64{aabb.Min.Y, my, aabb.Max.Y}
@@ -109,7 +119,7 @@ func (r *Renderer) subdivide(aabb math.AABB3D) {
 				r.subdivide(math.AABB3D{
 					Min: math.Point3D{X: xs[xi], Y: ys[yi], Z: zs[zi]},
 					Max: math.Point3D{X: xs[xi+1], Y: ys[yi+1], Z: zs[zi+1]},
-				})
+				}, bounds, img)
 			}
 		}
 	}

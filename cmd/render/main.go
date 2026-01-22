@@ -2,15 +2,24 @@ package main
 
 import (
 	"fmt"
-	"grinder/internal/math"
+	"grinder/pkg/math"
 	"grinder/pkg/camera"
 	"grinder/pkg/geometry"
 	"grinder/pkg/renderer"
 	"grinder/pkg/shading"
+	"image"
 	"image/color"
+	"image/draw"
 	"image/png"
 	"os"
+	"sync"
 )
+
+// RenderedTile holds the result of a tile rendering operation.
+type RenderedTile struct {
+	Bounds renderer.ScreenBounds
+	Image  *image.RGBA
+}
 
 func main() {
 	scene := []geometry.Shape{
@@ -37,9 +46,43 @@ func main() {
 	rndr := renderer.NewRenderer(cam, scene, light, width, height, 0.004)
 
 	fmt.Println("Rendering...")
-	// Render the full screen
-	bounds := renderer.ScreenBounds{MinX: 0, MinY: 0, MaxX: width, MaxY: height}
-	img := rndr.Render(bounds)
+
+	// --- Tiling and Concurrency ---
+	const numTilesX, numTilesY = 4, 4
+	tileWidth, tileHeight := width/numTilesX, height/numTilesY
+
+	var wg sync.WaitGroup
+	renderedTiles := make(chan RenderedTile, numTilesX*numTilesY)
+
+	for y := 0; y < numTilesY; y++ {
+		for x := 0; x < numTilesX; x++ {
+			wg.Add(1)
+			go func(x, y int) {
+				defer wg.Done()
+				bounds := renderer.ScreenBounds{
+					MinX: x * tileWidth,
+					MinY: y * tileHeight,
+					MaxX: (x + 1) * tileWidth,
+					MaxY: (y + 1) * tileHeight,
+				}
+				tileImg := rndr.Render(bounds)
+				renderedTiles <- RenderedTile{Bounds: bounds, Image: tileImg}
+			}(x, y)
+		}
+	}
+
+	// Wait for all rendering to complete, then close the channel.
+	go func() {
+		wg.Wait()
+		close(renderedTiles)
+	}()
+
+	// --- Image Assembly ---
+	finalImage := image.NewRGBA(image.Rect(0, 0, width, height))
+	for tile := range renderedTiles {
+		rect := image.Rect(tile.Bounds.MinX, tile.Bounds.MinY, tile.Bounds.MaxX, tile.Bounds.MaxY)
+		draw.Draw(finalImage, rect, tile.Image, image.Point{0, 0}, draw.Src)
+	}
 
 	f, err := os.Create("render.png")
 	if err != nil {
@@ -47,7 +90,7 @@ func main() {
 	}
 	defer f.Close()
 
-	if err := png.Encode(f, img); err != nil {
+	if err := png.Encode(f, finalImage); err != nil {
 		panic(err)
 	}
 

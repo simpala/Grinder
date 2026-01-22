@@ -1,7 +1,7 @@
 package shading
 
 import (
-	"grinder/internal/math"
+	"grinder/pkg/math"
 	"grinder/pkg/geometry"
 	"image/color"
 	gomath "math"
