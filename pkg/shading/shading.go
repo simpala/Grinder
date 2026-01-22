@@ -13,10 +13,11 @@ type Light struct {
 	Intensity float64
 }
 
+// ShadowMinBoxSize is the smallest AABB size used in the recursive shadow check.
+const ShadowMinBoxSize = 0.1
+
 // isOccluded performs a recursive AABB search to determine if a point is in shadow.
 func isOccluded(p, lightPos math.Point3D, shapes []geometry.Shape, self geometry.Shape) bool {
-	const minBoxSize = 0.1
-
 	// Initial AABB for the search
 	aabb := math.AABB3D{Min: p, Max: p}
 	aabb.Min.X = gomath.Min(p.X, lightPos.X)
@@ -43,7 +44,7 @@ func checkOcclusionRecursive(p, lightPos math.Point3D, shapes []geometry.Shape, 
 		}
 		if shape.Intersects(aabb) {
 			// If the box is small enough, consider it a hit
-			if (aabb.Max.X-aabb.Min.X) < 0.1 && (aabb.Max.Y-aabb.Min.Y) < 0.1 && (aabb.Max.Z-aabb.Min.Z) < 0.1 {
+			if (aabb.Max.X-aabb.Min.X) < ShadowMinBoxSize && (aabb.Max.Y-aabb.Min.Y) < ShadowMinBoxSize && (aabb.Max.Z-aabb.Min.Z) < ShadowMinBoxSize {
 				return true
 			}
 
