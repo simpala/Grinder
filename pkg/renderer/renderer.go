@@ -141,16 +141,13 @@ func (r *Renderer) Render(bounds ScreenBounds) *image.RGBA {
 func (r *Renderer) subdivide(aabb math.AABB3D, bounds ScreenBounds, surfaceBuffer [][]SurfaceData, primaryShapes []geometry.Shape, fullScene []geometry.Shape) {
 	worldAABB := r.getWorldAABB(aabb)
 
-	var hitShape geometry.Shape
-	anyHit := false
+	intersectingShapes := make([]geometry.Shape, 0)
 	for _, s := range primaryShapes {
 		if s.Intersects(worldAABB) {
-			anyHit = true
-			hitShape = s // Simplification: Just consider the first hit
-			break
+			intersectingShapes = append(intersectingShapes, s)
 		}
 	}
-	if !anyHit {
+	if len(intersectingShapes) == 0 {
 		return
 	}
 
@@ -172,16 +169,55 @@ func (r *Renderer) subdivide(aabb math.AABB3D, bounds ScreenBounds, surfaceBuffe
 
 					sx, sy := float64(px)/float64(r.Width), float64(py)/float64(r.Height)
 
+					var hitShape geometry.Shape
+					if len(intersectingShapes) == 1 {
+						hitShape = intersectingShapes[0]
+					} else {
+						// Multiple shapes, need to disambiguate with a ray.
+						ray := math.Ray{
+							Origin:    r.Camera.GetEye(),
+							Direction: r.Camera.Project(sx, sy, 1.0).Sub(r.Camera.GetEye()).Normalize(),
+						}
+						tmin, tmax, intersects := worldAABB.IntersectRay(ray)
+						if !intersects {
+							continue // Ray misses this AABB, weird but possible.
+						}
+
+						// March along the ray to find the first containing shape.
+						// The number of steps is a trade-off between precision and performance.
+						// More steps give a more accurate result for thin or complex shapes
+						// at the cost of longer render times.
+						const numSteps = 16
+						stepSize := (tmax - tmin) / float64(numSteps)
+						if stepSize < 1e-9 {
+							continue // Avoids instability with very thin AABBs
+						}
+
+						foundShapeInMarch := false
+						for i := 0; i <= numSteps; i++ {
+							p := ray.Origin.Add(ray.Direction.Mul(tmin + float64(i)*stepSize))
+							for _, s := range intersectingShapes {
+								if s.Contains(p) {
+									hitShape = s
+									foundShapeInMarch = true
+									break
+								}
+							}
+							if foundShapeInMarch {
+								break
+							}
+						}
+						if !foundShapeInMarch {
+							continue // March failed to find a definitive shape.
+						}
+					}
+
 					// Fine-grind search: find the actual surface within this depth slice
 					for i := 0; i < 8; i++ {
-						// Jitter the depth sample to reduce banding
 						zSample := aabb.Min.Z + (aabb.Max.Z-aabb.Min.Z)*(float64(i)/7.0)
-
-						// If we already have a hit, don't search behind it.
 						if currentData.Hit && zSample >= currentData.Depth {
 							continue
 						}
-
 						worldP := r.Camera.Project(sx, sy, zSample)
 						if hitShape.Contains(worldP) {
 							norm := hitShape.NormalAtPoint(worldP)
@@ -189,10 +225,10 @@ func (r *Renderer) subdivide(aabb math.AABB3D, bounds ScreenBounds, surfaceBuffe
 								P:     worldP,
 								N:     norm,
 								S:     hitShape,
-								Depth: zSample, // Use normalized screen depth for Z-buffer
+								Depth: zSample,
 								Hit:   true,
 							}
-							break // Found the surface for this pixel, move to the next.
+							break
 						}
 					}
 				}
