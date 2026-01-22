@@ -15,9 +15,16 @@ type Light struct {
 }
 
 // isOccluded checks for shadows by marching small AABBs towards the light source.
-func isOccluded(p, lightPos math.Point3D, shapes []geometry.Shape) bool {
+func isOccluded(p, lightPos math.Point3D, shapes []geometry.Shape, lightRadius float64) bool {
 	const stepSize = 0.2
-	const boxSize = 0.21 // The size of the AABB at each step, slightly larger than stepSize.
+	var boxSize float64
+
+	// Use a small, precise probe for hard shadows and a larger one for soft shadows.
+	if lightRadius == 0 {
+		boxSize = 0.05
+	} else {
+		boxSize = 0.21
+	}
 
 	vecToLight := lightPos.Sub(p)
 	distToLight := vecToLight.Length()
@@ -83,7 +90,7 @@ func ShadedColor(p math.Point3D, n math.Normal3D, eye math.Point3D, l Light, sha
 		}
 	}
 
-	inShadow := isOccluded(checkP, l.Position, occluders)
+	inShadow := isOccluded(checkP, l.Position, occluders, l.Radius)
 
 	// Diffuse (Lambert) component
 	dot := n.Dot(lightDir)
