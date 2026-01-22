@@ -16,6 +16,7 @@ type Shape interface {
 	GetSpecularIntensity() float64
 	GetSpecularColor() color.RGBA
 	GetAABB() math.AABB3D
+	GetCenter() math.Point3D
 }
 
 // Plane3D represents an infinite plane in 3D space.
@@ -86,6 +87,11 @@ func (pl Plane3D) GetAABB() math.AABB3D {
 	}
 }
 
+// GetCenter returns the plane's reference point.
+func (pl Plane3D) GetCenter() math.Point3D {
+	return pl.Point
+}
+
 // Sphere3D represents a sphere in 3D space.
 type Sphere3D struct {
 	Center            math.Point3D
@@ -138,6 +144,11 @@ func (s Sphere3D) GetAABB() math.AABB3D {
 		Min: s.Center.Sub(math.Point3D{X: s.Radius, Y: s.Radius, Z: s.Radius}),
 		Max: s.Center.Add(math.Point3D{X: s.Radius, Y: s.Radius, Z: s.Radius}),
 	}
+}
+
+// GetCenter returns the sphere's center point.
+func (s Sphere3D) GetCenter() math.Point3D {
+	return s.Center
 }
 
 // Box3D represents a solid box (AABB) in 3D space.
@@ -196,6 +207,11 @@ func (s Box3D) GetSpecularIntensity() float64 { return s.SpecularIntensity }
 func (s Box3D) GetSpecularColor() color.RGBA { return s.SpecularColor }
 
 func (b Box3D) GetAABB() math.AABB3D { return math.AABB3D{Min: b.Min, Max: b.Max} }
+
+// GetCenter returns the center of the box.
+func (b Box3D) GetCenter() math.Point3D {
+	return b.Min.Add(b.Max).Mul(0.5)
+}
 
 type Cylinder3D struct {
 	Center            math.Point3D // Center of the base
@@ -265,6 +281,15 @@ func (c Cylinder3D) GetAABB() math.AABB3D {
 			Y: c.Center.Y + c.Height,
 			Z: c.Center.Z + c.Radius,
 		},
+	}
+}
+
+// GetCenter returns the geometric center of the cylinder.
+func (c Cylinder3D) GetCenter() math.Point3D {
+	return math.Point3D{
+		X: c.Center.X,
+		Y: c.Center.Y + c.Height/2.0,
+		Z: c.Center.Z,
 	}
 }
 
@@ -355,3 +380,12 @@ func (s Cone3D) GetSpecularIntensity() float64 { return s.SpecularIntensity }
 
 // GetSpecularColor returns the specular color of the sphere.
 func (s Cone3D) GetSpecularColor() color.RGBA { return s.SpecularColor }
+
+// GetCenter returns the geometric center of the cone.
+func (c Cone3D) GetCenter() math.Point3D {
+	return math.Point3D{
+		X: c.Center.X,
+		Y: c.Center.Y + c.Height/4.0, // Center of mass for a solid cone
+		Z: c.Center.Z,
+	}
+}
