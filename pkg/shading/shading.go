@@ -11,12 +11,13 @@ import (
 type Light struct {
 	Position  math.Point3D
 	Intensity float64
+	Radius    float64
 }
 
 // isOccluded checks for shadows by marching small AABBs towards the light source.
-func isOccluded(p, lightPos math.Point3D, shapes []geometry.Shape, self geometry.Shape) bool {
-	const stepSize = 0.1
-	const boxSize = 0.05 // The size of the AABB at each step.
+func isOccluded(p, lightPos math.Point3D, shapes []geometry.Shape) bool {
+	const stepSize = 0.2
+	const boxSize = 0.21 // The size of the AABB at each step, slightly larger than stepSize.
 
 	vecToLight := lightPos.Sub(p)
 	distToLight := vecToLight.Length()
@@ -34,9 +35,6 @@ func isOccluded(p, lightPos math.Point3D, shapes []geometry.Shape, self geometry
 
 		// Check for intersection with any shape in the scene.
 		for _, shape := range shapes {
-			if shape == self {
-				continue
-			}
 			// Ignore planes to prevent self-shadowing on the floor.
 			if _, ok := shape.(geometry.Plane3D); ok {
 				continue
@@ -57,9 +55,35 @@ func ShadedColor(p math.Point3D, n math.Normal3D, eye math.Point3D, l Light, sha
 	base := shape.GetColor()
 
 	// Shadow Check
-	shadowBias := 0.001
-	checkP := math.Point3D{X: p.X + n.X*shadowBias, Y: p.Y + n.Y*shadowBias, Z: p.Z + n.Z*shadowBias}
-	inShadow := isOccluded(checkP, l.Position, shapes, shape)
+	shadowBias := 1e-4 // Small epsilon to prevent self-shadowing ("shadow acne")
+	checkP := math.Point3D{X: p.X + n.X * shadowBias, Y: p.Y + n.Y * shadowBias, Z: p.Z + n.Z * shadowBias}
+
+	// Shadow Culling: Create a bounding box from the surface point to the light
+	cullAABB := math.AABB3D{
+		Min: math.Point3D{
+			X: gomath.Min(checkP.X, l.Position.X-l.Radius),
+			Y: gomath.Min(checkP.Y, l.Position.Y-l.Radius),
+			Z: gomath.Min(checkP.Z, l.Position.Z-l.Radius),
+		},
+		Max: math.Point3D{
+			X: gomath.Max(checkP.X, l.Position.X+l.Radius),
+			Y: gomath.Max(checkP.Y, l.Position.Y+l.Radius),
+			Z: gomath.Max(checkP.Z, l.Position.Z+l.Radius),
+		},
+	}
+
+	// Filter shapes to only those that could possibly cast a shadow.
+	occluders := make([]geometry.Shape, 0)
+	for _, s := range shapes {
+		if s == shape {
+			continue // Don't check self
+		}
+		if s.GetAABB().Intersects(cullAABB) {
+			occluders = append(occluders, s)
+		}
+	}
+
+	inShadow := isOccluded(checkP, l.Position, occluders)
 
 	// Diffuse (Lambert) component
 	dot := n.Dot(lightDir)

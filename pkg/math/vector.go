@@ -8,6 +8,13 @@ type Point3D struct{ X, Y, Z float64 }
 // AABB3D represents an axis-aligned bounding box in 3D space.
 type AABB3D struct{ Min, Max Point3D }
 
+// Intersects checks if two AABBs overlap.
+func (a AABB3D) Intersects(b AABB3D) bool {
+	return (a.Min.X <= b.Max.X && a.Max.X >= b.Min.X) &&
+		(a.Min.Y <= b.Max.Y && a.Max.Y >= b.Min.Y) &&
+		(a.Min.Z <= b.Max.Z && a.Max.Z >= b.Min.Z)
+}
+
 // Normal3D represents a normal vector in 3D space.
 type Normal3D struct{ X, Y, Z float64 }
 
