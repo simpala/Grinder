@@ -25,12 +25,15 @@ type LightConfig struct {
 }
 
 type ShapeConfig struct {
-	Type   string         `json:"type"`
-	Center math.Point3D `json:"center,omitempty"`
-	Radius float64        `json:"radius,omitempty"`
-	Point  math.Point3D `json:"point,omitempty"`
-	Normal math.Normal3D  `json:"normal,omitempty"`
-	Color  color.RGBA     `json:"color"`
+	Type              string         `json:"type"`
+	Center            math.Point3D `json:"center,omitempty"`
+	Radius            float64        `json:"radius,omitempty"`
+	Point             math.Point3D `json:"point,omitempty"`
+	Normal            math.Normal3D  `json:"normal,omitempty"`
+	Color             color.RGBA     `json:"color"`
+	Shininess         *float64       `json:"shininess,omitempty"`
+	SpecularIntensity *float64       `json:"specularIntensity,omitempty"`
+	SpecularColor     *color.RGBA    `json:"specularColor,omitempty"`
 }
 
 type SceneConfig struct {
@@ -65,18 +68,39 @@ func LoadScene(filepath string) (camera.Camera, []geometry.Shape, *shading.Light
 
 	var shapes []geometry.Shape
 	for _, shapeConfig := range config.Shapes {
+		shininess := 32.0
+		if shapeConfig.Shininess != nil {
+			shininess = *shapeConfig.Shininess
+		}
+
+		specularIntensity := 0.5
+		if shapeConfig.SpecularIntensity != nil {
+			specularIntensity = *shapeConfig.SpecularIntensity
+		}
+
+		specularColor := color.RGBA{R: 255, G: 255, B: 255, A: 255}
+		if shapeConfig.SpecularColor != nil {
+			specularColor = *shapeConfig.SpecularColor
+		}
+
 		switch shapeConfig.Type {
 		case "sphere":
 			shapes = append(shapes, geometry.Sphere3D{
-				Center: shapeConfig.Center,
-				Radius: shapeConfig.Radius,
-				Color:  shapeConfig.Color,
+				Center:            shapeConfig.Center,
+				Radius:            shapeConfig.Radius,
+				Color:             shapeConfig.Color,
+				Shininess:         shininess,
+				SpecularIntensity: specularIntensity,
+				SpecularColor:     specularColor,
 			})
 		case "plane":
 			shapes = append(shapes, geometry.Plane3D{
-				Point:  shapeConfig.Point,
-				Normal: shapeConfig.Normal,
-				Color:  shapeConfig.Color,
+				Point:             shapeConfig.Point,
+				Normal:            shapeConfig.Normal,
+				Color:             shapeConfig.Color,
+				Shininess:         shininess,
+				SpecularIntensity: specularIntensity,
+				SpecularColor:     specularColor,
 			})
 		default:
 			return nil, nil, nil, fmt.Errorf("unknown shape type: %s", shapeConfig.Type)

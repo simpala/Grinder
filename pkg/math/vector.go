@@ -39,3 +39,18 @@ func (a Point3D) Dot(b Point3D) float64 {
 func (a Point3D) DotNormal(b Normal3D) float64 {
 	return a.X*b.X + a.Y*b.Y + a.Z*b.Z
 }
+
+// Dot returns the dot product of two normal vectors.
+func (a Normal3D) Dot(b Point3D) float64 {
+	return a.X*b.X + a.Y*b.Y + a.Z*b.Z
+}
+
+// ToVector converts a Normal3D to a Point3D.
+func (n Normal3D) ToVector() Point3D {
+	return Point3D{n.X, n.Y, n.Z}
+}
+
+// Mul returns the scalar product of a vector.
+func (a Point3D) Mul(s float64) Point3D {
+	return Point3D{a.X * s, a.Y * s, a.Z * s}
+}

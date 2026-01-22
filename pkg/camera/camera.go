@@ -8,6 +8,7 @@ import (
 // Camera defines the interface for a camera system.
 type Camera interface {
 	Project(sx, sy, z float64) math.Point3D
+	GetEye() math.Point3D
 }
 
 // PerspectiveCamera represents a camera with perspective projection.
@@ -37,4 +38,9 @@ func (c *PerspectiveCamera) Project(sx, sy, z float64) math.Point3D {
 		Y: c.Position.Y + c.Forward.Y*z + c.Right.Y*nx + c.Up.Y*ny,
 		Z: c.Position.Z + c.Forward.Z*z + c.Right.Z*nx + c.Up.Z*ny,
 	}
+}
+
+// GetEye returns the position of the camera.
+func (c *PerspectiveCamera) GetEye() math.Point3D {
+	return c.Position
 }
