@@ -229,6 +229,8 @@ func (r *Renderer) getWorldAABB(aabb math.AABB3D) math.AABB3D {
 		r.Camera.Project(aabb.Max.X, aabb.Min.Y, aabb.Max.Z),
 		r.Camera.Project(aabb.Min.X, aabb.Max.Y, aabb.Max.Z),
 		r.Camera.Project(aabb.Max.X, aabb.Max.Y, aabb.Max.Z),
+		// Crucially, include the camera's eye to form a conservative frustum AABB
+		r.Camera.GetEye(),
 	}
 	minP := math.Point3D{X: gomath.Inf(1), Y: gomath.Inf(1), Z: gomath.Inf(1)}
 	maxP := math.Point3D{X: gomath.Inf(-1), Y: gomath.Inf(-1), Z: gomath.Inf(-1)}
