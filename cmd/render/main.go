@@ -1,19 +1,50 @@
 package main
 
 import (
+	"flag"
 	"fmt"
-	"grinder/pkg/math"
-	"grinder/pkg/camera"
-	"grinder/pkg/geometry"
+	"grinder/pkg/loader"
 	"grinder/pkg/renderer"
-	"grinder/pkg/shading"
 	"image"
-	"image/color"
 	"image/draw"
 	"image/png"
 	"os"
 	"sync"
 )
+
+const sampleScene = `{
+  "camera": {
+    "eye": {"x": 4, "y": 3, "z": 6},
+    "target": {"x": 0, "y": 0, "z": 0},
+    "up": {"x": 0, "y": 1, "z": 0},
+    "fov": 45,
+    "aspect": 1
+  },
+  "light": {
+    "position": {"x": 10, "y": 10, "z": 10},
+    "intensity": 1.3
+  },
+  "shapes": [
+    {
+      "type": "sphere",
+      "center": {"x": 0, "y": 0, "z": 0},
+      "radius": 1,
+      "color": {"R": 255, "G": 80, "B": 80, "A": 255}
+    },
+    {
+      "type": "sphere",
+      "center": {"x": 1.2, "y": 0.5, "z": -0.5},
+      "radius": 0.5,
+      "color": {"R": 80, "G": 255, "B": 80, "A": 255}
+    },
+    {
+      "type": "plane",
+      "point": {"x": 0, "y": -1, "z": 0},
+      "normal": {"x": 0, "y": 1, "z": 0},
+      "color": {"R": 100, "G": 100, "B": 100, "A": 255}
+    }
+  ]
+}`
 
 // RenderedTile holds the result of a tile rendering operation.
 type RenderedTile struct {
@@ -22,28 +53,25 @@ type RenderedTile struct {
 }
 
 func main() {
-	scene := []geometry.Shape{
-		geometry.Sphere3D{Center: math.Point3D{X: 0, Y: 0, Z: 0}, Radius: 1.0, Color: color.RGBA{R: 255, G: 80, B: 80, A: 255}},
-		geometry.Sphere3D{Center: math.Point3D{X: 1.2, Y: 0.5, Z: -0.5}, Radius: 0.5, Color: color.RGBA{R: 80, G: 255, B: 80, A: 255}},
-		geometry.Plane3D{
-			Point:  math.Point3D{X: 0, Y: -1.0, Z: 0},
-			Normal: math.Normal3D{X: 0, Y: 1, Z: 0},
-			Color:  color.RGBA{R: 100, G: 100, B: 100, A: 255},
-		},
+	scenePath := flag.String("scene", "", "Path to the scene JSON file")
+	flag.Parse()
+
+	if *scenePath == "" {
+		fmt.Println("Error: Scene file not provided.")
+		fmt.Println("Usage: go run . -scene=<path_to_scene.json>")
+		fmt.Println("\nSample Scene JSON:")
+		fmt.Println(sampleScene)
+		os.Exit(1)
 	}
 
-	cam := camera.NewLookAtCamera(
-		math.Point3D{X: 4, Y: 3, Z: 6}, // Eye
-		math.Point3D{X: 0, Y: 0, Z: 0}, // Target
-		math.Point3D{X: 0, Y: 1, Z: 0}, // Up
-		45.0,
-		1.0,
-	)
-
-	light := shading.Light{Position: math.Point3D{X: 10, Y: 10, Z: 10}, Intensity: 1.3}
+	cam, scene, light, err := loader.LoadScene(*scenePath)
+	if err != nil {
+		fmt.Printf("Error loading scene: %v\n", err)
+		os.Exit(1)
+	}
 
 	width, height := 512, 512
-	rndr := renderer.NewRenderer(cam, scene, light, width, height, 0.004)
+	rndr := renderer.NewRenderer(cam, scene, *light, width, height, 0.004)
 
 	fmt.Println("Rendering...")
 
