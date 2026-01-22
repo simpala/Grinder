@@ -1,7 +1,7 @@
 package camera
 
 import (
-	"grinder/internal/math"
+	"grinder/pkg/math"
 	gomath "math"
 )
 

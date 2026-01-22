@@ -1,7 +1,7 @@
 package geometry
 
 import (
-	"grinder/internal/math"
+	"grinder/pkg/math"
 	"image/color"
 	gomath "math"
 )
