@@ -91,7 +91,7 @@ func (r *Renderer) Render(bounds ScreenBounds) *image.RGBA {
 					sy := (float64(bounds.MinY+y) + prng.NextFloat64()) / float64(r.Height)
 
 					// We use the original hit point's depth (Z) for the sample ray
-					worldP := r.Camera.Project(sx, sy, surface.P.Z)
+					worldP := r.Camera.Project(sx, sy, surface.Depth)
 
 					// Use the pre-calculated normal from the Dicer pass
 					finalColor := shading.ShadedColor(worldP, surface.N, r.Camera.GetEye(), r.Light, surface.S, r.Shapes)
@@ -132,20 +132,10 @@ func (r *Renderer) subdivide(aabb math.AABB3D, bounds ScreenBounds, surfaceBuffe
 		return
 	}
 
-	// Base case: If the AABB is small enough, store surface data.
+	// Base case: If the AABB is small enough, do a fine-grind search for the surface.
 	if (aabb.Max.X - aabb.Min.X) < r.MinSize {
 		minX, minY := int(aabb.Min.X*float64(r.Width)), int(aabb.Min.Y*float64(r.Height))
 		maxX, maxY := int(aabb.Max.X*float64(r.Width)), int(aabb.Max.Y*float64(r.Height))
-
-		// Project the center of the AABB to find the surface point.
-		sx := (aabb.Min.X + aabb.Max.X) / 2
-		sy := (aabb.Min.Y + aabb.Max.Y) / 2
-		sz := (aabb.Min.Z + aabb.Max.Z) / 2
-		worldP := r.Camera.Project(sx, sy, sz)
-
-		// Simplified intersection test for the diced box.
-		norm := hitShape.NormalAtPoint(worldP)
-		depth := worldP.Z
 
 		for py := minY; py <= maxY; py++ {
 			for px := minX; px <= maxX; px++ {
@@ -153,14 +143,34 @@ func (r *Renderer) subdivide(aabb math.AABB3D, bounds ScreenBounds, surfaceBuffe
 					tileX, tileY := px-bounds.MinX, py-bounds.MinY
 					currentData := surfaceBuffer[tileY][tileX]
 
-					// Z-buffer check: only store if this point is closer.
-					if !currentData.Hit || depth < currentData.Depth {
-						surfaceBuffer[tileY][tileX] = SurfaceData{
-							P:     worldP,
-							N:     norm,
-							S:     hitShape,
-							Depth: depth,
-							Hit:   true,
+					// Skip if we've already found a closer surface for this pixel.
+					if currentData.Hit && aabb.Min.Z >= currentData.Depth {
+						continue
+					}
+
+					sx, sy := float64(px)/float64(r.Width), float64(py)/float64(r.Height)
+
+					// Fine-grind search: find the actual surface within this depth slice
+					for i := 0; i < 8; i++ {
+						// Jitter the depth sample to reduce banding
+						zSample := aabb.Min.Z + (aabb.Max.Z-aabb.Min.Z)*(float64(i)/7.0)
+
+						// If we already have a hit, don't search behind it.
+						if currentData.Hit && zSample >= currentData.Depth {
+							continue
+						}
+
+						worldP := r.Camera.Project(sx, sy, zSample)
+						if hitShape.Contains(worldP) {
+							norm := hitShape.NormalAtPoint(worldP)
+							surfaceBuffer[tileY][tileX] = SurfaceData{
+								P:     worldP,
+								N:     norm,
+								S:     hitShape,
+								Depth: zSample, // Use normalized screen depth for Z-buffer
+								Hit:   true,
+							}
+							break // Found the surface for this pixel, move to the next.
 						}
 					}
 				}
