@@ -80,32 +80,36 @@ func (r *Renderer) subdivide(aabb math.AABB3D, bounds ScreenBounds, img *image.R
 	}
 
 	// Base case: If the AABB is small enough, fill the pixels.
-	if (aabb.Max.X - aabb.Min.X) < r.MinSize {
-		minX, minY := int(aabb.Min.X*float64(r.Width)), int(aabb.Min.Y*float64(r.Height))
-		maxX, maxY := int(aabb.Max.X*float64(r.Width)), int(aabb.Max.Y*float64(r.Height))
+// Base case: If the AABB is small enough, fill the pixels.
+if (aabb.Max.X - aabb.Min.X) < r.MinSize {
+    minX, minY := int(aabb.Min.X*float64(r.Width)), int(aabb.Min.Y*float64(r.Height))
+    maxX, maxY := int(aabb.Max.X*float64(r.Width)), int(aabb.Max.Y*float64(r.Height))
 
-		for py := minY; py <= maxY; py++ {
-			for px := minX; px <= maxX; px++ {
-				// Render only pixels within the designated tile bounds.
-				if px >= bounds.MinX && px < bounds.MaxX && py >= bounds.MinY && py < bounds.MaxY {
-					tileX, tileY := px-bounds.MinX, py-bounds.MinY
+    for py := minY; py <= maxY; py++ {
+        for px := minX; px <= maxX; px++ {
+            if px >= bounds.MinX && px < bounds.MaxX && py >= bounds.MinY && py < bounds.MaxY {
+                tileX, tileY := px-bounds.MinX, py-bounds.MinY
 
-					// Check if pixel is still background
-					if img.RGBAAt(tileX, tileY) == r.bgColor {
-						sx, sy := float64(px)/float64(r.Width), float64(py)/float64(r.Height)
-						zMid := (aabb.Min.Z + aabb.Max.Z) / 2
-						worldP := r.Camera.Project(sx, sy, zMid)
+                if img.RGBAAt(tileX, tileY) == r.bgColor {
+                    sx, sy := float64(px)/float64(r.Width), float64(py)/float64(r.Height)
+                    
+                    // Fine-grind search: find the actual surface within this depth slice
+                    for zi := 0; zi < 4; zi++ { 
+                        zSample := aabb.Min.Z + (aabb.Max.Z-aabb.Min.Z)*(float64(zi)/3.0)
+                        worldP := r.Camera.Project(sx, sy, zSample)
 
-						if hitShape.Contains(worldP) {
-							norm := hitShape.NormalAtPoint(worldP)
-							img.Set(tileX, tileY, shading.ShadedColor(worldP, norm, r.Light, hitShape.GetColor(), r.Shapes))
-						}
-					}
-				}
-			}
-		}
-		return
-	}
+                        if hitShape.Contains(worldP) {
+                            norm := hitShape.NormalAtPoint(worldP)
+                            img.Set(tileX, tileY, shading.ShadedColor(worldP, norm, r.Light, hitShape.GetColor(), r.Shapes))
+                            break // Found the surface, move to next pixel
+                        }
+                    }
+                }
+            }
+        }
+    }
+    return
+}
 
 	// Recursive step: Subdivide the AABB into 8 smaller boxes.
 	mx, my, mz := (aabb.Min.X+aabb.Max.X)/2, (aabb.Min.Y+aabb.Max.Y)/2, (aabb.Min.Z+aabb.Max.Z)/2
