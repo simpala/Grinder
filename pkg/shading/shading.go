@@ -79,7 +79,8 @@ func TraceShadow(p math.Point3D, n math.Normal3D, l Light, shapes []geometry.Sha
 		currentP := p.Add(n.ToVector().Mul(0.01))
 
 		hit := false
-		for t := 0.0; t < distToLight; t += 0.2 {
+		const stepSize = 0.2
+		for t := rng.Float64() * stepSize; t < distToLight; t += stepSize {
 			sampleP := currentP.Add(dir.Mul(t))
 			for _, s := range shapes {
 				if _, ok := s.(geometry.Plane3D); ok {
