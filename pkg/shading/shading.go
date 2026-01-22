@@ -75,13 +75,18 @@ func TraceShadow(p math.Point3D, n math.Normal3D, l Light, shapes []geometry.Sha
 		dir := targetPos.Sub(p).Normalize()
 		distToLight := p.Distance(targetPos)
 
-		// Bias to prevent self-intersection
-		currentP := p.Add(n.ToVector().Mul(0.01))
+		// Stochastic Surface Normal Bias
+		epsilon := 0.01 + (rng.Float64() * 0.02)
+		biasedStart := p.Add(n.ToVector().Mul(epsilon))
 
 		hit := false
-		const stepSize = 0.2
-		for t := rng.Float64() * stepSize; t < distToLight; t += stepSize {
-			sampleP := currentP.Add(dir.Mul(t))
+		for t := rng.Float64() * 0.1; t < distToLight; {
+			sampleP := biasedStart.Add(dir.Mul(t))
+
+			// Randomized Shadow 'Grind' (Stochastic Stepping)
+			step := 0.05 + (rng.Float64() * 0.1)
+			t += step
+
 			for _, s := range shapes {
 				if _, ok := s.(geometry.Plane3D); ok {
 					continue

@@ -100,9 +100,9 @@ if (aabb.Max.X - aabb.Min.X) < r.MinSize {
                 tileX, tileY := px-bounds.MinX, py-bounds.MinY
 
                 if img.RGBAAt(tileX, tileY) == r.bgColor {
-                    // 4x Super-Sampling for Anti-Aliasing
+                    // 9x Super-Sampling for Anti-Aliasing
                     var rSum, gSum, bSum float64
-                    const numSamples = 4
+                    const numSamples = 9
                     for i := 0; i < numSamples; i++ {
                         // Jitter the sub-pixel positions
                         sx := (float64(px) + rng.Float64()) / float64(r.Width)
