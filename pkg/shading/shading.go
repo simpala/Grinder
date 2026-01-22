@@ -13,39 +13,82 @@ type Light struct {
 	Intensity float64
 }
 
-// isOccluded checks for shadows by marching small AABBs towards the light source.
+// ShadowMinBoxSize is the smallest AABB size used in the recursive shadow check.
+const ShadowMinBoxSize = 0.1
+
+// isOccluded performs a recursive AABB search to determine if a point is in shadow.
 func isOccluded(p, lightPos math.Point3D, shapes []geometry.Shape, self geometry.Shape) bool {
-	const stepSize = 0.1
-	const boxSize = 0.05 // The size of the AABB at each step.
+	// Initial AABB for the search
+	aabb := math.AABB3D{Min: p, Max: p}
+	aabb.Min.X = gomath.Min(p.X, lightPos.X)
+	aabb.Min.Y = gomath.Min(p.Y, lightPos.Y)
+	aabb.Min.Z = gomath.Min(p.Z, lightPos.Z)
+	aabb.Max.X = gomath.Max(p.X, lightPos.X)
+	aabb.Max.Y = gomath.Max(p.Y, lightPos.Y)
+	aabb.Max.Z = gomath.Max(p.Z, lightPos.Z)
 
-	vecToLight := lightPos.Sub(p)
-	distToLight := vecToLight.Length()
-	dirToLight := vecToLight.Normalize()
+	return checkOcclusionRecursive(p, lightPos, shapes, self, aabb, 0)
+}
 
-	// March from the point towards the light.
-	for t := stepSize; t < distToLight; t += stepSize {
-		samplePoint := p.Add(dirToLight.Mul(t))
+func checkOcclusionRecursive(p, lightPos math.Point3D, shapes []geometry.Shape, self geometry.Shape, aabb math.AABB3D, depth int) bool {
+	if depth > 10 { // Max recursion depth
+		return false
+	}
 
-		// Create a small AABB around the sample point.
-		aabb := math.AABB3D{
-			Min: samplePoint.Sub(math.Point3D{X: boxSize, Y: boxSize, Z: boxSize}),
-			Max: samplePoint.Add(math.Point3D{X: boxSize, Y: boxSize, Z: boxSize}),
+	for _, shape := range shapes {
+		if shape == self {
+			continue
 		}
+		if _, ok := shape.(geometry.Plane3D); ok {
+			continue
+		}
+		if shape.Intersects(aabb) {
+			// If the box is small enough, consider it a hit
+			if (aabb.Max.X-aabb.Min.X) < ShadowMinBoxSize && (aabb.Max.Y-aabb.Min.Y) < ShadowMinBoxSize && (aabb.Max.Z-aabb.Min.Z) < ShadowMinBoxSize {
+				return true
+			}
 
-		// Check for intersection with any shape in the scene.
-		for _, shape := range shapes {
-			if shape == self {
-				continue
-			}
-			// Ignore planes to prevent self-shadowing on the floor.
-			if _, ok := shape.(geometry.Plane3D); ok {
-				continue
-			}
-			if shape.Intersects(aabb) {
-				return true // The point is in shadow.
+			// Determine which sub-box the light ray passes through.
+			nextAABB := getNextAABB(aabb, lightPos)
+
+			if checkOcclusionRecursive(p, lightPos, shapes, self, nextAABB, depth+1) {
+				return true
 			}
 		}
 	}
+	return false
+}
+
+func getNextAABB(currentAABB math.AABB3D, lightPos math.Point3D) math.AABB3D {
+	mid := currentAABB.Min.Add(currentAABB.Max).Mul(0.5)
+	nextMin := currentAABB.Min
+	nextMax := mid
+
+	if lightPos.X > mid.X {
+		nextMin.X = mid.X
+		nextMax.X = currentAABB.Max.X
+	}
+	if lightPos.Y > mid.Y {
+		nextMin.Y = mid.Y
+		nextMax.Y = currentAABB.Max.Y
+	}
+	if lightPos.Z > mid.Z {
+		nextMin.Z = mid.Z
+		nextMax.Z = currentAABB.Max.Z
+	}
+	return math.AABB3D{Min: nextMin, Max: nextMax}
+}
+
+// ShadedColor calculates the color of a point on a surface.
+func ShadedColor(p math.Point3D, n math.Normal3D, eye math.Point3D, l Light, shape geometry.Shape, shapes []geometry.Shape) color.RGBA {
+	lightVec := l.Position.Sub(p)
+	lightDir := lightVec.Normalize()
+	base := shape.GetColor()
+
+	// Shadow Check
+	shadowBias := 0.001
+	checkP := math.Point3D{X: p.X + n.X*shadowBias, Y: p.Y + n.Y*shadowBias, Z: p.Z + n.Z*shadowBias}
+	inShadow := isOccluded(checkP, l.Position, shapes, shape)
 
 	return false // The point is not in shadow.
 }
