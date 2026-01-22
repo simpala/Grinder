@@ -12,7 +12,7 @@ Lazy Dicing: Geometry is only subdivided ("diced") when it is visible within a s
 
 Front-to-Back Determinism: The subdivision order naturally handles occlusion, eliminating the need for a traditional Z-buffer.
 
-Tile-Ready: The renderer is built to be "embarrassingly parallel" by dicing the screen into independent work units (Tiles). # not implemented yet
+Tile-Ready: The renderer is built to be "embarrassingly parallel" by dicing the screen into independent work units (Tiles).
 
 
 ![render](./render.png)
