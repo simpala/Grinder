@@ -39,7 +39,7 @@ type SceneConfig struct {
 	Shapes []ShapeConfig `json:"shapes"`
 }
 
-func LoadScene(filepath string) (*camera.Camera, []geometry.Shape, *shading.Light, error) {
+func LoadScene(filepath string) (camera.Camera, []geometry.Shape, *shading.Light, error) {
 	file, err := os.ReadFile(filepath)
 	if err != nil {
 		return nil, nil, nil, fmt.Errorf("failed to read scene file: %w", err)
