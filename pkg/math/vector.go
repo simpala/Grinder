@@ -60,7 +60,11 @@ func (a Point3D) Add(b Point3D) Point3D {
 	return Point3D{a.X + b.X, a.Y + b.Y, a.Z + b.Z}
 }
 
-// Distance returns the Euclidean distance between two points.
-func (a Point3D) Distance(b Point3D) float64 {
-	return math.Sqrt(math.Pow(a.X-b.X, 2) + math.Pow(a.Y-b.Y, 2) + math.Pow(a.Z-b.Z, 2))
+// Centroid returns the center point of the AABB.
+func (a AABB3D) Centroid() Point3D {
+	return Point3D{
+		X: (a.Min.X + a.Max.X) / 2,
+		Y: (a.Min.Y + a.Max.Y) / 2,
+		Z: (a.Min.Z + a.Max.Z) / 2,
+	}
 }
