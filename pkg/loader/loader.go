@@ -26,15 +26,20 @@ type LightConfig struct {
 }
 
 type ShapeConfig struct {
-	Type              string         `json:"type"`
-	Center            math.Point3D `json:"center,omitempty"`
-	Radius            float64        `json:"radius,omitempty"`
-	Point             math.Point3D `json:"point,omitempty"`
-	Normal            math.Normal3D  `json:"normal,omitempty"`
-	Color             color.RGBA     `json:"color"`
-	Shininess         *float64       `json:"shininess,omitempty"`
-	SpecularIntensity *float64       `json:"specularIntensity,omitempty"`
-	SpecularColor     *color.RGBA    `json:"specularColor,omitempty"`
+	Type   string        `json:"type"`
+	Center math.Point3D  `json:"center,omitempty"`
+	Radius float64       `json:"radius,omitempty"`
+	Point  math.Point3D  `json:"point,omitempty"`
+	Normal math.Normal3D `json:"normal,omitempty"`
+	// New fields for Box and Cylinder
+	Min    math.Point3D `json:"min,omitempty"`
+	Max    math.Point3D `json:"max,omitempty"`
+	Height float64      `json:"height,omitempty"`
+	// ---
+	Color             color.RGBA  `json:"color"`
+	Shininess         *float64    `json:"shininess,omitempty"`
+	SpecularIntensity *float64    `json:"specularIntensity,omitempty"`
+	SpecularColor     *color.RGBA `json:"specularColor,omitempty"`
 }
 
 type SceneConfig struct {
@@ -99,6 +104,36 @@ func LoadScene(filepath string) (camera.Camera, []geometry.Shape, *shading.Light
 			shapes = append(shapes, geometry.Plane3D{
 				Point:             shapeConfig.Point,
 				Normal:            shapeConfig.Normal,
+				Color:             shapeConfig.Color,
+				Shininess:         shininess,
+				SpecularIntensity: specularIntensity,
+				SpecularColor:     specularColor,
+			})
+		case "box":
+			shapes = append(shapes, geometry.Box3D{
+				Min:               shapeConfig.Min,
+				Max:               shapeConfig.Max,
+				Color:             shapeConfig.Color,
+				Shininess:         shininess,
+				SpecularIntensity: specularIntensity,
+				SpecularColor:     specularColor,
+			})
+
+		case "cylinder":
+			shapes = append(shapes, geometry.Cylinder3D{
+				Center:            shapeConfig.Center, // Base center
+				Radius:            shapeConfig.Radius,
+				Height:            shapeConfig.Height,
+				Color:             shapeConfig.Color,
+				Shininess:         shininess,
+				SpecularIntensity: specularIntensity,
+				SpecularColor:     specularColor,
+			})
+		case "cone":
+			shapes = append(shapes, geometry.Cone3D{
+				Center:            shapeConfig.Center,
+				Radius:            shapeConfig.Radius,
+				Height:            shapeConfig.Height,
 				Color:             shapeConfig.Color,
 				Shininess:         shininess,
 				SpecularIntensity: specularIntensity,
