@@ -13,37 +13,81 @@ type Light struct {
 	Intensity float64
 }
 
-// ShadedColor calculates the color of a point on a surface, including basic shadowing and specular highlights.
+// isOccluded performs a recursive AABB search to determine if a point is in shadow.
+func isOccluded(p, lightPos math.Point3D, shapes []geometry.Shape, self geometry.Shape) bool {
+	const minBoxSize = 0.1
+
+	// Initial AABB for the search
+	aabb := math.AABB3D{Min: p, Max: p}
+	aabb.Min.X = gomath.Min(p.X, lightPos.X)
+	aabb.Min.Y = gomath.Min(p.Y, lightPos.Y)
+	aabb.Min.Z = gomath.Min(p.Z, lightPos.Z)
+	aabb.Max.X = gomath.Max(p.X, lightPos.X)
+	aabb.Max.Y = gomath.Max(p.Y, lightPos.Y)
+	aabb.Max.Z = gomath.Max(p.Z, lightPos.Z)
+
+	return checkOcclusionRecursive(p, lightPos, shapes, self, aabb, 0)
+}
+
+func checkOcclusionRecursive(p, lightPos math.Point3D, shapes []geometry.Shape, self geometry.Shape, aabb math.AABB3D, depth int) bool {
+	if depth > 10 { // Max recursion depth
+		return false
+	}
+
+	for _, shape := range shapes {
+		if shape == self {
+			continue
+		}
+		if _, ok := shape.(geometry.Plane3D); ok {
+			continue
+		}
+		if shape.Intersects(aabb) {
+			// If the box is small enough, consider it a hit
+			if (aabb.Max.X-aabb.Min.X) < 0.1 && (aabb.Max.Y-aabb.Min.Y) < 0.1 && (aabb.Max.Z-aabb.Min.Z) < 0.1 {
+				return true
+			}
+
+			// Determine which sub-box the light ray passes through.
+			nextAABB := getNextAABB(aabb, lightPos)
+
+			if checkOcclusionRecursive(p, lightPos, shapes, self, nextAABB, depth+1) {
+				return true
+			}
+		}
+	}
+	return false
+}
+
+func getNextAABB(currentAABB math.AABB3D, lightPos math.Point3D) math.AABB3D {
+	mid := currentAABB.Min.Add(currentAABB.Max).Mul(0.5)
+	nextMin := currentAABB.Min
+	nextMax := mid
+
+	if lightPos.X > mid.X {
+		nextMin.X = mid.X
+		nextMax.X = currentAABB.Max.X
+	}
+	if lightPos.Y > mid.Y {
+		nextMin.Y = mid.Y
+		nextMax.Y = currentAABB.Max.Y
+	}
+	if lightPos.Z > mid.Z {
+		nextMin.Z = mid.Z
+		nextMax.Z = currentAABB.Max.Z
+	}
+	return math.AABB3D{Min: nextMin, Max: nextMax}
+}
+
+// ShadedColor calculates the color of a point on a surface.
 func ShadedColor(p math.Point3D, n math.Normal3D, eye math.Point3D, l Light, shape geometry.Shape, shapes []geometry.Shape) color.RGBA {
 	lightVec := l.Position.Sub(p)
 	lightDir := lightVec.Normalize()
 	base := shape.GetColor()
 
-	// Shadow Check: Offset the starting point slightly to avoid self-intersection.
-	shadowBias := 0.01
+	// Shadow Check
+	shadowBias := 0.001
 	checkP := math.Point3D{X: p.X + n.X*shadowBias, Y: p.Y + n.Y*shadowBias, Z: p.Z + n.Z*shadowBias}
-
-	inShadow := false
-	// Trace towards the light (cheap volumetric shadow check).
-	for t := 0.1; t < 5.0; t += 0.2 {
-		sampleP := math.Point3D{X: checkP.X + lightDir.X*t, Y: checkP.Y + lightDir.Y*t, Z: checkP.Z + lightDir.Z*t}
-		for _, s := range shapes {
-			if s == shape {
-				continue
-			}
-			// Ignore planes for this specific simple shadow check to prevent infinite floor shadows.
-			if _, ok := s.(geometry.Plane3D); ok {
-				continue
-			}
-			if s.Contains(sampleP) {
-				inShadow = true
-				break
-			}
-		}
-		if inShadow {
-			break
-		}
-	}
+	inShadow := isOccluded(checkP, l.Position, shapes, shape)
 
 	// Diffuse (Lambert) component
 	dot := n.Dot(lightDir)
