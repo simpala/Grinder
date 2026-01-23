@@ -14,6 +14,14 @@ func (a AABB3D) Intersects(b AABB3D) bool {
 		(a.Min.Y <= b.Max.Y && a.Max.Y >= b.Min.Y) &&
 		(a.Min.Z <= b.Max.Z && a.Max.Z >= b.Min.Z)
 }
+func (aabb AABB3D) GetCorners() [8]Point3D {
+	return [8]Point3D{
+		{aabb.Min.X, aabb.Min.Y, aabb.Min.Z}, {aabb.Max.X, aabb.Min.Y, aabb.Min.Z},
+		{aabb.Min.X, aabb.Max.Y, aabb.Min.Z}, {aabb.Max.X, aabb.Max.Y, aabb.Min.Z},
+		{aabb.Min.X, aabb.Min.Y, aabb.Max.Z}, {aabb.Max.X, aabb.Min.Y, aabb.Max.Z},
+		{aabb.Min.X, aabb.Max.Y, aabb.Max.Z}, {aabb.Max.X, aabb.Max.Y, aabb.Max.Z},
+	}
+}
 
 // Normal3D represents a normal vector in 3D space.
 type Normal3D struct{ X, Y, Z float64 }
