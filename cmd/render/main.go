@@ -64,14 +64,15 @@ func main() {
 		os.Exit(1)
 	}
 
-	cam, scene, light, err := loader.LoadScene(*scenePath)
+	cam, scene, light, atmos, near, far, err := loader.LoadScene(*scenePath)
 	if err != nil {
 		fmt.Printf("Error loading scene: %v\n", err)
 		os.Exit(1)
 	}
 
 	width, height := 512, 512
-	rndr := renderer.NewRenderer(cam, scene, *light, width, height, 0.004)
+	// Pass 'atmos' as the final argument to NewRenderer
+	rndr := renderer.NewRenderer(cam, scene, *light, width, height, 0.004, near, far, atmos)
 
 	fmt.Println("Rendering...")
 
