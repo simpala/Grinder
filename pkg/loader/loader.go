@@ -17,12 +17,20 @@ type CameraConfig struct {
 	Up     math.Point3D `json:"up"`
 	Fov    float64      `json:"fov"`
 	Aspect float64      `json:"aspect"`
+	Near   float64      `json:"near,omitempty"`
+	Far    float64      `json:"far,omitempty"`
 }
 
+//	type AtmosphereConfig struct {
+//		Type    string     `json:"type"`    // e.g., "linear_fog"
+//		Color   color.RGBA `json:"color"`   // The color of the "haze"
+//		Density float64    `json:"density"` // Strength of the effect (0.0 to 1.0)
+//	}
 type LightConfig struct {
 	Position  math.Point3D `json:"position"`
 	Intensity float64      `json:"intensity"`
 	Radius    float64      `json:"radius,omitempty"`
+	Samples   int          `json:"samples,omitempty"` // New field
 }
 
 type ShapeConfig struct {
@@ -43,20 +51,21 @@ type ShapeConfig struct {
 }
 
 type SceneConfig struct {
-	Camera CameraConfig  `json:"camera"`
-	Light  LightConfig   `json:"light"`
-	Shapes []ShapeConfig `json:"shapes"`
+	Camera     CameraConfig             `json:"camera"`
+	Light      LightConfig              `json:"light"`
+	Atmosphere shading.AtmosphereConfig `json:"atmosphere"` // Use the shared one
+	Shapes     []ShapeConfig            `json:"shapes"`
 }
 
-func LoadScene(filepath string) (camera.Camera, []geometry.Shape, *shading.Light, error) {
+func LoadScene(filepath string) (camera.Camera, []geometry.Shape, *shading.Light, shading.AtmosphereConfig, float64, float64, error) {
 	file, err := os.ReadFile(filepath)
 	if err != nil {
-		return nil, nil, nil, fmt.Errorf("failed to read scene file: %w", err)
+		return nil, nil, nil, shading.AtmosphereConfig{}, 0, 0, fmt.Errorf("failed to read scene file: %w", err)
 	}
 
 	var config SceneConfig
 	if err := json.Unmarshal(file, &config); err != nil {
-		return nil, nil, nil, fmt.Errorf("failed to parse scene file: %w", err)
+		return nil, nil, nil, shading.AtmosphereConfig{}, 0, 0, fmt.Errorf("failed to parse scene file: %w", err)
 	}
 
 	cam := camera.NewLookAtCamera(
@@ -67,10 +76,16 @@ func LoadScene(filepath string) (camera.Camera, []geometry.Shape, *shading.Light
 		config.Camera.Aspect,
 	)
 
+	samples := config.Light.Samples
+	if samples <= 0 {
+		samples = 9 // Default fallback
+	}
+
 	light := &shading.Light{
 		Position:  config.Light.Position,
 		Intensity: config.Light.Intensity,
 		Radius:    config.Light.Radius,
+		Samples:   samples, // Pass it through
 	}
 
 	var shapes []geometry.Shape
@@ -140,9 +155,9 @@ func LoadScene(filepath string) (camera.Camera, []geometry.Shape, *shading.Light
 				SpecularColor:     specularColor,
 			})
 		default:
-			return nil, nil, nil, fmt.Errorf("unknown shape type: %s", shapeConfig.Type)
+			return nil, nil, nil, shading.AtmosphereConfig{}, 0, 0, fmt.Errorf("unknown shape type: %s", shapeConfig.Type)
 		}
 	}
 
-	return cam, shapes, light, nil
+	return cam, shapes, light, config.Atmosphere, config.Camera.Near, config.Camera.Far, nil
 }
