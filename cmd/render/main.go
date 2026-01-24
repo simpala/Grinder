@@ -106,11 +106,17 @@ func main() {
 
 	// --- Tiling and Concurrency ---
 	const tileSize = 64
+	const overdraw = 1
 	numTilesX := width / tileSize
 	numTilesY := height / tileSize
 
+	type RenderJob struct {
+		RenderBounds renderer.ScreenBounds
+		DrawBounds   image.Rectangle
+	}
+
 	// Create a channel with enough buffer for all jobs
-	jobs := make(chan renderer.ScreenBounds, numTilesX*numTilesY)
+	jobs := make(chan RenderJob, numTilesX*numTilesY)
 	var wg sync.WaitGroup
 
 	finalImage := image.NewRGBA(image.Rect(0, 0, width, height))
@@ -135,11 +141,10 @@ func main() {
 
 	// --- WORKER POOL ---
 	worker := func() {
-		for bounds := range jobs {
-			tileImg := rndr.Render(bounds)
+		for job := range jobs {
+			tileImg := rndr.Render(job.RenderBounds)
 			mu.Lock()
-			rect := image.Rect(bounds.MinX, bounds.MinY, bounds.MaxX, bounds.MaxY)
-			draw.Draw(finalImage, rect, tileImg, image.Point{0, 0}, draw.Src)
+			draw.Draw(finalImage, job.DrawBounds, tileImg, image.Point{overdraw, overdraw}, draw.Src)
 			mu.Unlock()
 			wg.Done()
 		}
@@ -158,9 +163,14 @@ func main() {
 	go func() {
 		for y := 0; y < height; y += tileSize {
 			for x := 0; x < width; x += tileSize {
-				jobs <- renderer.ScreenBounds{
-					MinX: x, MinY: y,
-					MaxX: x + tileSize, MaxY: y + tileSize,
+				jobs <- RenderJob{
+					RenderBounds: renderer.ScreenBounds{
+						MinX: x - overdraw,
+						MinY: y - overdraw,
+						MaxX: x + tileSize + overdraw,
+						MaxY: y + tileSize + overdraw,
+					},
+					DrawBounds: image.Rect(x, y, x+tileSize, y+tileSize),
 				}
 			}
 		}
