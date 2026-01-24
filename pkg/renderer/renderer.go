@@ -26,6 +26,7 @@ type SurfaceData struct {
 }
 
 // Renderer is a configurable rendering engine.
+// Culling/early out is being held off until later when we have more features as its very tricky to get right and breaks with new feature additions.
 type Renderer struct {
 	Camera     camera.Camera
 	Shapes     []geometry.Shape
