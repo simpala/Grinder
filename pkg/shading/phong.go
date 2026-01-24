@@ -42,19 +42,15 @@ func ShadedColor(p math.Point3D, n math.Normal3D, eye math.Point3D, l Light, sha
 		}
 	}
 
-	inShadow := isOccluded(checkP, l.Position, occluders, l.Radius)
+	shadowAttenuation := calculateShadowAttenuation(checkP, l.Position, occluders, l.Radius)
 
 	// Diffuse (Lambert) component
 	dot := n.Dot(lightDir)
-	diffuseFactor := gomath.Max(0.15, dot) * l.Intensity // Ambient term is 0.15
-
-	if inShadow {
-		diffuseFactor = 0.15 // Ambient only
-	}
+	diffuseFactor := gomath.Max(0.15, dot*l.Intensity*shadowAttenuation) // Ambient term is 0.15
 
 	// Specular (Phong) component
 	var specularR, specularG, specularB float64
-	if !inShadow { // No specular highlights in shadow
+	if shadowAttenuation > 0 { // No specular highlights in full shadow
 		viewDir := eye.Sub(p).Normalize()
 
 		// R = 2 * (N . L) * N - L
