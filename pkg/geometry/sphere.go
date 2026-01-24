@@ -56,11 +56,25 @@ func (s Sphere3D) GetSpecularIntensity() float64 { return s.SpecularIntensity }
 func (s Sphere3D) GetSpecularColor() color.RGBA { return s.SpecularColor }
 
 // GetAABB returns the bounding box of the sphere.
-func (s Sphere3D) GetAABB() math.AABB3D {
-	return math.AABB3D{
+func (s *Sphere3D) GetAABB() math.AABB3D {
+	baseAABB := math.AABB3D{
 		Min: s.Center.Sub(math.Point3D{X: s.Radius, Y: s.Radius, Z: s.Radius}),
 		Max: s.Center.Add(math.Point3D{X: s.Radius, Y: s.Radius, Z: s.Radius}),
 	}
+	if len(s.Motion) == 0 {
+		return baseAABB
+	}
+	for _, kf := range s.Motion {
+		kfMin := kf.Position.Sub(math.Point3D{X: s.Radius, Y: s.Radius, Z: s.Radius})
+		kfMax := kf.Position.Add(math.Point3D{X: s.Radius, Y: s.Radius, Z: s.Radius})
+		baseAABB.Min.X = gomath.Min(baseAABB.Min.X, kfMin.X)
+		baseAABB.Min.Y = gomath.Min(baseAABB.Min.Y, kfMin.Y)
+		baseAABB.Min.Z = gomath.Min(baseAABB.Min.Z, kfMin.Z)
+		baseAABB.Max.X = gomath.Max(baseAABB.Max.X, kfMax.X)
+		baseAABB.Max.Y = gomath.Max(baseAABB.Max.Y, kfMax.Y)
+		baseAABB.Max.Z = gomath.Max(baseAABB.Max.Z, kfMax.Z)
+	}
+	return baseAABB
 }
 
 // GetCenter returns the sphere's center point.

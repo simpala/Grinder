@@ -39,19 +39,19 @@ type LightConfig struct {
 }
 
 type ShapeConfig struct {
-	Type              string             `json:"type"`
-	Center            math.Point3D       `json:"center,omitempty"`
-	Radius            float64            `json:"radius,omitempty"`
-	Point             math.Point3D       `json:"point,omitempty"`
-	Normal            math.Normal3D      `json:"normal,omitempty"`
-	Min               math.Point3D       `json:"min,omitempty"`
-	Max               math.Point3D       `json:"max,omitempty"`
-	Height            float64            `json:"height,omitempty"`
-	Density           float64            `json:"density,omitempty"`
-	Color             color.RGBA         `json:"color"`
-	Shininess         *float64           `json:"shininess,omitempty"`
-	SpecularIntensity *float64           `json:"specularIntensity,omitempty"`
-	SpecularColor     *color.RGBA        `json:"specularColor,omitempty"`
+	Type              string            `json:"type"`
+	Center            math.Point3D      `json:"center,omitempty"`
+	Radius            float64           `json:"radius,omitempty"`
+	Point             math.Point3D      `json:"point,omitempty"`
+	Normal            math.Normal3D     `json:"normal,omitempty"`
+	Min               math.Point3D      `json:"min,omitempty"`
+	Max               math.Point3D      `json:"max,omitempty"`
+	Height            float64           `json:"height,omitempty"`
+	Density           float64           `json:"density,omitempty"`
+	Color             color.RGBA        `json:"color"`
+	Shininess         *float64          `json:"shininess,omitempty"`
+	SpecularIntensity *float64          `json:"specularIntensity,omitempty"`
+	SpecularColor     *color.RGBA       `json:"specularColor,omitempty"`
 	Motion            []motion.Keyframe `json:"motion,omitempty"`
 }
 

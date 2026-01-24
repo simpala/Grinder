@@ -8,6 +8,7 @@ import (
 // Camera defines the interface for a camera system.
 type Camera interface {
 	Project(sx, sy, z float64) math.Point3D
+	GetRay(sx, sy float64) math.Ray
 	GetEye() math.Point3D
 	GetShutterOpen() float64
 	GetShutterClose() float64
@@ -61,4 +62,15 @@ func (c *PerspectiveCamera) GetShutterOpen() float64 {
 // GetShutterClose returns the shutter close time of the camera.
 func (c *PerspectiveCamera) GetShutterClose() float64 {
 	return c.ShutterClose
+}
+
+func (c *PerspectiveCamera) GetRay(sx, sy float64) math.Ray {
+	// Remap screen coordinates to [-1, 1] and account for aspect ratio and FOV
+	ndcX := (2*sx - 1) * c.Aspect * c.FovScale
+	ndcY := (1 - 2*sy) * c.FovScale
+
+	// The direction from the eye to the point on the view plane
+	viewPlaneDir := c.Right.Multiply(ndcX).Add(c.Up.Multiply(ndcY)).Add(c.Forward)
+
+	return math.Ray{Origin: c.Position, Direction: viewPlaneDir.Normalize()}
 }

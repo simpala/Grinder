@@ -50,6 +50,11 @@ func (a Point3D) Dot(b Point3D) float64 {
 	return a.X*b.X + a.Y*b.Y + a.Z*b.Z
 }
 
+// Multiply scales a vector by a scalar.
+func (p Point3D) Multiply(s float64) Point3D {
+	return Point3D{X: p.X * s, Y: p.Y * s, Z: p.Z * s}
+}
+
 // DotNormal returns the dot product of a Point3D and a Normal3D.
 func (a Point3D) DotNormal(b Normal3D) float64 {
 	return a.X*b.X + a.Y*b.Y + a.Z*b.Z

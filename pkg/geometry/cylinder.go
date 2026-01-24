@@ -66,8 +66,8 @@ func (s Cylinder3D) GetSpecularIntensity() float64 { return s.SpecularIntensity 
 func (s Cylinder3D) GetSpecularColor() color.RGBA { return s.SpecularColor }
 
 // GetAABB returns the bounding box of the cylinder.
-func (c Cylinder3D) GetAABB() math.AABB3D {
-	return math.AABB3D{
+func (c *Cylinder3D) GetAABB() math.AABB3D {
+	baseAABB := math.AABB3D{
 		Min: math.Point3D{
 			X: c.Center.X - c.Radius,
 			Y: c.Center.Y,
@@ -79,6 +79,28 @@ func (c Cylinder3D) GetAABB() math.AABB3D {
 			Z: c.Center.Z + c.Radius,
 		},
 	}
+	if len(c.Motion) == 0 {
+		return baseAABB
+	}
+	for _, kf := range c.Motion {
+		kfMin := math.Point3D{
+			X: kf.Position.X - c.Radius,
+			Y: kf.Position.Y,
+			Z: kf.Position.Z - c.Radius,
+		}
+		kfMax := math.Point3D{
+			X: kf.Position.X + c.Radius,
+			Y: kf.Position.Y + c.Height,
+			Z: kf.Position.Z + c.Radius,
+		}
+		baseAABB.Min.X = gomath.Min(baseAABB.Min.X, kfMin.X)
+		baseAABB.Min.Y = gomath.Min(baseAABB.Min.Y, kfMin.Y)
+		baseAABB.Min.Z = gomath.Min(baseAABB.Min.Z, kfMin.Z)
+		baseAABB.Max.X = gomath.Max(baseAABB.Max.X, kfMax.X)
+		baseAABB.Max.Y = gomath.Max(baseAABB.Max.Y, kfMax.Y)
+		baseAABB.Max.Z = gomath.Max(baseAABB.Max.Z, kfMax.Z)
+	}
+	return baseAABB
 }
 
 // GetCenter returns the geometric center of the cylinder.

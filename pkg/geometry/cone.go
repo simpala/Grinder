@@ -2,10 +2,11 @@ package geometry
 
 import (
 	"grinder/pkg/math"
-	"grinder/pkg/motion"
 	"image/color"
 	gomath "math"
 )
+
+import "grinder/pkg/motion"
 
 // Cone3D represents a cone in 3D space.
 type Cone3D struct {
@@ -77,11 +78,33 @@ func (c Cone3D) NormalAtPoint(p math.Point3D) math.Normal3D {
 	return math.Normal3D{X: n.X, Y: n.Y, Z: n.Z}
 }
 
-func (c Cone3D) GetAABB() math.AABB3D {
-	return math.AABB3D{
+func (c *Cone3D) GetAABB() math.AABB3D {
+	baseAABB := math.AABB3D{
 		Min: math.Point3D{X: c.Center.X - c.Radius, Y: c.Center.Y, Z: c.Center.Z - c.Radius},
 		Max: math.Point3D{X: c.Center.X + c.Radius, Y: c.Center.Y + c.Height, Z: c.Center.Z + c.Radius},
 	}
+	if len(c.Motion) == 0 {
+		return baseAABB
+	}
+	for _, kf := range c.Motion {
+		kfMin := math.Point3D{
+			X: kf.Position.X - c.Radius,
+			Y: kf.Position.Y,
+			Z: kf.Position.Z - c.Radius,
+		}
+		kfMax := math.Point3D{
+			X: kf.Position.X + c.Radius,
+			Y: kf.Position.Y + c.Height,
+			Z: kf.Position.Z + c.Radius,
+		}
+		baseAABB.Min.X = gomath.Min(baseAABB.Min.X, kfMin.X)
+		baseAABB.Min.Y = gomath.Min(baseAABB.Min.Y, kfMin.Y)
+		baseAABB.Min.Z = gomath.Min(baseAABB.Min.Z, kfMin.Z)
+		baseAABB.Max.X = gomath.Max(baseAABB.Max.X, kfMax.X)
+		baseAABB.Max.Y = gomath.Max(baseAABB.Max.Y, kfMax.Y)
+		baseAABB.Max.Z = gomath.Max(baseAABB.Max.Z, kfMax.Z)
+	}
+	return baseAABB
 }
 
 // GetColor returns the color of the cone.

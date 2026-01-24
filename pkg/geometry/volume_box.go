@@ -65,7 +65,24 @@ func (s VolumeBox) GetSpecularIntensity() float64 { return s.SpecularIntensity }
 // GetSpecularColor returns the specular color of the box.
 func (s VolumeBox) GetSpecularColor() color.RGBA { return s.SpecularColor }
 
-func (b VolumeBox) GetAABB() math.AABB3D { return math.AABB3D{Min: b.Min, Max: b.Max} }
+func (b *VolumeBox) GetAABB() math.AABB3D {
+	baseAABB := math.AABB3D{Min: b.Min, Max: b.Max}
+	if len(b.Motion) == 0 {
+		return baseAABB
+	}
+	size := b.Max.Sub(b.Min)
+	for _, kf := range b.Motion {
+		kfMin := kf.Position.Sub(size.Mul(0.5))
+		kfMax := kf.Position.Add(size.Mul(0.5))
+		baseAABB.Min.X = gomath.Min(baseAABB.Min.X, kfMin.X)
+		baseAABB.Min.Y = gomath.Min(baseAABB.Min.Y, kfMin.Y)
+		baseAABB.Min.Z = gomath.Min(baseAABB.Min.Z, kfMin.Z)
+		baseAABB.Max.X = gomath.Max(baseAABB.Max.X, kfMax.X)
+		baseAABB.Max.Y = gomath.Max(baseAABB.Max.Y, kfMax.Y)
+		baseAABB.Max.Z = gomath.Max(baseAABB.Max.Z, kfMax.Z)
+	}
+	return baseAABB
+}
 
 // GetCenter returns the center of the box.
 func (b VolumeBox) GetCenter() math.Point3D {

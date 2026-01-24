@@ -8,7 +8,6 @@ import (
 	"image"
 	"image/color"
 	gomath "math"
-	"sort"
 )
 
 // ScreenBounds defines the rectangular region of the screen to be rendered.
@@ -16,14 +15,20 @@ type ScreenBounds struct {
 	MinX, MinY, MaxX, MaxY int
 }
 
-// SurfaceData stores the essential geometry info for a final pixel.
+// SurfaceSample stores the geometry info for a single sample in time.
+type SurfaceSample struct {
+	P     math.Point3D
+	N     math.Normal3D
+	S     geometry.Shape
+	T     float64 // Time of the sample
+	Depth float64
+}
+
+// SurfaceData stores all the samples for a final pixel.
 type SurfaceData struct {
-	P             math.Point3D
-	N             math.Normal3D
-	S             geometry.Shape
-	Depth         float64
-	Hit           bool
-	VolumeSamples []VolumeSample
+	AccumulatedColor [3]float64 // R, G, B
+	SampleCount      int
+	VolumeSamples    []VolumeSample
 }
 
 // VolumeSample stores data for a single sample within a volume.
@@ -121,142 +126,56 @@ func (r *Renderer) Render(bounds ScreenBounds) *image.RGBA {
 	img := image.NewRGBA(image.Rect(0, 0, tileWidth, tileHeight))
 	prng := math.NewXorShift32(uint32(bounds.MinX*r.Width + bounds.MinY))
 
-	// Accumulation buffer for all motion blur samples
-	colorBuffer := make([][][]float64, tileHeight)
-	for i := range colorBuffer {
-		colorBuffer[i] = make([][]float64, tileWidth)
-		for j := range colorBuffer[i] {
-			colorBuffer[i][j] = make([]float64, 3) // R, G, B
-		}
+	surfaceBuffer := make([][]SurfaceData, tileHeight)
+	for i := range surfaceBuffer {
+		surfaceBuffer[i] = make([]SurfaceData, tileWidth)
 	}
 
-	for s := 0; s < r.MotionBlurSamples; s++ {
-		// --- Pass 1: Dicing/Subdivision for each time sample ---
-		surfaceBuffer := make([][]SurfaceData, tileHeight)
-		for i := range surfaceBuffer {
-			surfaceBuffer[i] = make([]SurfaceData, tileWidth)
-		}
+	// Pass 1: Dicing/Subdivision (Visibility)
+	initialAABB := math.AABB3D{
+		Min: math.Point3D{X: float64(bounds.MinX) / float64(r.Width), Y: float64(bounds.MinY) / float64(r.Height), Z: r.Near},
+		Max: math.Point3D{X: float64(bounds.MaxX) / float64(r.Width), Y: float64(bounds.MaxY) / float64(r.Height), Z: r.Far},
+	}
 
-		// Determine the time for this sample
-		t := r.Camera.GetShutterOpen() + (r.Camera.GetShutterClose()-r.Camera.GetShutterOpen())*(float64(s)+prng.NextFloat64())/float64(r.MotionBlurSamples)
+	// The primaryShapes list is now static for the entire tile render.
+	// The GetAABB() methods on the shapes now return a temporal AABB.
+	r.subdivide(initialAABB, bounds, surfaceBuffer, r.Shapes, prng)
 
-		// Create a version of the scene at this specific time
-		timeSampledShapes := make([]geometry.Shape, len(r.Shapes))
-		for i, shape := range r.Shapes {
-			timeSampledShapes[i] = shape.AtTime(t)
-		}
-
-		initialAABB := math.AABB3D{
-			Min: math.Point3D{X: float64(bounds.MinX) / float64(r.Width), Y: float64(bounds.MinY) / float64(r.Height), Z: r.Near},
-			Max: math.Point3D{X: float64(bounds.MaxX) / float64(r.Width), Y: float64(bounds.MaxY) / float64(r.Height), Z: r.Far},
-		}
-
-		sort.Slice(timeSampledShapes, func(i, j int) bool {
-			distI := timeSampledShapes[i].GetCenter().Sub(r.Camera.GetEye()).Length()
-			distJ := timeSampledShapes[j].GetCenter().Sub(r.Camera.GetEye()).Length()
-			return distI > distJ
-		})
-
-		r.subdivide(initialAABB, bounds, surfaceBuffer, timeSampledShapes, timeSampledShapes)
-
-		// --- Pass 2: Shading for this time sample ---
-		for y := 0; y < tileHeight; y++ {
-			for x := 0; x < tileWidth; x++ {
-				surface := surfaceBuffer[y][x]
-				var finalColor color.RGBA
-
-				if surface.Hit {
-					var rTotal, gTotal, bTotal float64
-					gridSize := int(gomath.Sqrt(float64(r.Light.Samples)))
-					if gridSize < 1 {
-						gridSize = 1
-					}
-					totalSamples := float64(gridSize * gridSize)
-
-					lightVec := r.Light.Position.Sub(surface.P)
-					lightDir := lightVec.Normalize()
-					var up math.Point3D
-					if gomath.Abs(lightDir.Y) < 0.9 {
-						up = math.Point3D{X: 0, Y: 1, Z: 0}
-					} else {
-						up = math.Point3D{X: 1, Y: 0, Z: 0}
-					}
-					right := lightDir.Cross(up).Normalize()
-					vUp := lightDir.Cross(right).Normalize()
-
-					for gy := 0; gy < gridSize; gy++ {
-						for gx := 0; gx < gridSize; gx++ {
-							sx := (float64(bounds.MinX+x) + prng.NextFloat64()) / float64(r.Width)
-							sy := (float64(bounds.MinY+y) + prng.NextFloat64()) / float64(r.Height)
-							worldP := r.Camera.Project(sx, sy, surface.Depth)
-
-							var jitteredLight shading.Light
-							if r.Light.Radius > 0 {
-								u, v := (float64(gx)+prng.NextFloat64())/float64(gridSize), (float64(gy)+prng.NextFloat64())/float64(gridSize)
-								offU, offV := (u*2-1)*r.Light.Radius, (v*2-1)*r.Light.Radius
-								jitteredPos := r.Light.Position.Add(right.Mul(offU)).Add(vUp.Mul(offV))
-								jitteredLight = shading.Light{Position: jitteredPos, Intensity: r.Light.Intensity, Radius: r.Light.Radius}
-							} else {
-								jitteredLight = r.Light
-							}
-							shadedColor := shading.ShadedColor(worldP, surface.N, r.Camera.GetEye(), jitteredLight, surface.S, timeSampledShapes)
-							rTotal += float64(shadedColor.R)
-							gTotal += float64(shadedColor.G)
-							bTotal += float64(shadedColor.B)
-						}
-					}
-					surfaceColor := color.RGBA{R: uint8(rTotal / totalSamples), G: uint8(gTotal / totalSamples), B: uint8(bTotal / totalSamples), A: 255}
-					finalColor = shading.ApplyAtmosphere(surfaceColor, surface.Depth, r.Atmosphere)
-				} else {
-					finalColor = shading.ApplyAtmosphere(r.bgColor, r.Far, r.Atmosphere)
-				}
-
-				// 2. Composite Volumetric Samples
-				if len(surface.VolumeSamples) > 0 {
-					for _, sample := range surface.VolumeSamples {
-						// Only composite samples that are in front of the solid surface
-						if !surface.Hit || sample.Depth < surface.Depth {
-							volColor := sample.Shape.GetColor()
-							density := sample.Shape.GetDensity()
-							blendFactor := gomath.Min(1.0, density*sample.Interval)
-
-							finalColor.R = uint8(float64(finalColor.R)*(1-blendFactor) + float64(volColor.R)*blendFactor)
-							finalColor.G = uint8(float64(finalColor.G)*(1-blendFactor) + float64(volColor.G)*blendFactor)
-							finalColor.B = uint8(float64(finalColor.B)*(1-blendFactor) + float64(volColor.B)*blendFactor)
-						}
-					}
-				}
-
-				// Accumulate the color for this sample
-				colorBuffer[y][x][0] += float64(finalColor.R)
-				colorBuffer[y][x][1] += float64(finalColor.G)
-				colorBuffer[y][x][2] += float64(finalColor.B)
+	// Pass 2: Shading
+	for y := 0; y < tileHeight; y++ {
+		for x := 0; x < tileWidth; x++ {
+			surface := surfaceBuffer[y][x]
+			if surface.SampleCount > 0 {
+				avgR := surface.AccumulatedColor[0] / float64(surface.SampleCount)
+				avgG := surface.AccumulatedColor[1] / float64(surface.SampleCount)
+				avgB := surface.AccumulatedColor[2] / float64(surface.SampleCount)
+				finalColor := color.RGBA{R: uint8(avgR), G: uint8(avgG), B: uint8(avgB), A: 255}
+				img.Set(x, y, finalColor)
+			} else {
+				// --- Background / Volumetrics ---
+				bgColor := shading.ApplyAtmosphere(r.bgColor, r.Far, r.Atmosphere)
+				img.Set(x, y, bgColor)
 			}
 		}
 	}
-
-	// --- Final Pass: Averaging and Setting the Image ---
-	for y := 0; y < tileHeight; y++ {
-		for x := 0; x < tileWidth; x++ {
-			avgR := uint8(colorBuffer[y][x][0] / float64(r.MotionBlurSamples))
-			avgG := uint8(colorBuffer[y][x][1] / float64(r.MotionBlurSamples))
-			avgB := uint8(colorBuffer[y][x][2] / float64(r.MotionBlurSamples))
-			img.Set(x, y, color.RGBA{R: avgR, G: avgG, B: avgB, A: 255})
-		}
-	}
-
 	return img
 }
 
 // subdivide is the core recursive rendering function (Pass 1: Dicing).
-func (r *Renderer) subdivide(aabb math.AABB3D, bounds ScreenBounds, surfaceBuffer [][]SurfaceData, primaryShapes []geometry.Shape, fullScene []geometry.Shape) {
-	// Don't cull recursively. The primaryShapes list is the definitive set for this tile.
-	if len(primaryShapes) == 0 {
+func (r *Renderer) subdivide(aabb math.AABB3D, bounds ScreenBounds, surfaceBuffer [][]SurfaceData, shapes []geometry.Shape, prng *math.XorShift32) {
+	// Broad phase cull
+	intersectingShapes := make([]geometry.Shape, 0)
+	for _, s := range shapes {
+		if s.GetAABB().Intersects(aabb) {
+			intersectingShapes = append(intersectingShapes, s)
+		}
+	}
+	if len(intersectingShapes) == 0 {
 		return
 	}
 
 	// Base case: If the AABB is small enough, do a fine-grind search for the surface.
-	if (aabb.Max.X - aabb.Min.X) < r.MinSize {
+	if (aabb.Max.X-aabb.Min.X) < r.MinSize || (aabb.Max.Y-aabb.Min.Y) < r.MinSize {
 		minX, minY := int(aabb.Min.X*float64(r.Width)), int(aabb.Min.Y*float64(r.Height))
 		maxX, maxY := int(aabb.Max.X*float64(r.Width)), int(aabb.Max.Y*float64(r.Height))
 
@@ -264,43 +183,48 @@ func (r *Renderer) subdivide(aabb math.AABB3D, bounds ScreenBounds, surfaceBuffe
 			for px := minX; px <= maxX; px++ {
 				if px >= bounds.MinX && px < bounds.MaxX && py >= bounds.MinY && py < bounds.MaxY {
 					tileX, tileY := px-bounds.MinX, py-bounds.MinY
-					sx, sy := float64(px)/float64(r.Width), float64(py)/float64(r.Height)
+					sx, sy := (float64(px)+prng.NextFloat64())/float64(r.Width), (float64(py)+prng.NextFloat64())/float64(r.Height)
 
-					// Fine-grind search: find the actual surface within this depth slice
-					for _, s := range primaryShapes {
-						if s.IsVolumetric() {
-							interval := (aabb.Max.Z - aabb.Min.Z) / 7.0
-							for i := 0; i < 8; i++ {
-								zSample := aabb.Min.Z + (aabb.Max.Z-aabb.Min.Z)*(float64(i)/7.0)
-								worldP := r.Camera.Project(sx, sy, zSample)
-								if s.Contains(worldP) {
-									surfaceBuffer[tileY][tileX].VolumeSamples = append(surfaceBuffer[tileY][tileX].VolumeSamples, VolumeSample{
-										Shape:    s.(geometry.VolumetricShape),
-										Interval: interval,
-										Depth:    zSample,
-									})
+					// Perform multiple time samples for this pixel
+					for i := 0; i < r.MotionBlurSamples; i++ {
+						t := r.Camera.GetShutterOpen() + (r.Camera.GetShutterClose()-r.Camera.GetShutterOpen())*prng.NextFloat64()
+
+						ray := r.Camera.GetRay(sx, sy)
+
+						// Find the closest surface at this time 't'
+						var closestSample *SurfaceSample
+						minT := r.Far
+
+						for _, s := range intersectingShapes {
+							if s.IsVolumetric() {
+								// Volumetric handling needs to be re-evaluated with ray marching
+							} else {
+								movedShape := s.AtTime(t)
+								// Fine-grind search from near plane to closest hit
+								// Increased steps for more precision since we aren't using the subdivided Z anymore
+								for j := 0; j < 256; j++ {
+									tSample := r.Near + (minT-r.Near)*(float64(j)/255.0)
+									worldP := ray.At(tSample)
+									if movedShape.Contains(worldP) {
+										minT = tSample
+										closestSample = &SurfaceSample{
+											P:     worldP,
+											N:     movedShape.NormalAtPoint(worldP),
+											S:     s, // Store the original shape, not the temporary one
+											T:     t,
+											Depth: tSample, // Use t as depth
+										}
+										break // Found closest point for this shape, check next shape
+									}
 								}
 							}
-						} else {
-							for i := 0; i < 8; i++ {
-								zSample := aabb.Min.Z + (aabb.Max.Z-aabb.Min.Z)*(float64(i)/7.0)
-
-								// The Painterly Check:
-								// If we already hit something closer, don't even bother sampling this shape.
-								if surfaceBuffer[tileY][tileX].Hit && zSample >= surfaceBuffer[tileY][tileX].Depth {
-									continue
-								}
-
-								worldP := r.Camera.Project(sx, sy, zSample)
-								if s.Contains(worldP) {
-									surfaceBuffer[tileY][tileX].P = worldP
-									surfaceBuffer[tileY][tileX].N = s.NormalAtPoint(worldP)
-									surfaceBuffer[tileY][tileX].S = s
-									surfaceBuffer[tileY][tileX].Depth = zSample
-									surfaceBuffer[tileY][tileX].Hit = true
-									break // Found the surface for this specific shape; move to next shape
-								}
-							}
+						}
+						if closestSample != nil {
+							c := shading.ShadedColor(closestSample.P, closestSample.N, r.Camera.GetEye(), r.Light, closestSample.S, shapes, t)
+							surfaceBuffer[tileY][tileX].AccumulatedColor[0] += float64(c.R)
+							surfaceBuffer[tileY][tileX].AccumulatedColor[1] += float64(c.G)
+							surfaceBuffer[tileY][tileX].AccumulatedColor[2] += float64(c.B)
+							surfaceBuffer[tileY][tileX].SampleCount++
 						}
 					}
 				}
@@ -311,18 +235,18 @@ func (r *Renderer) subdivide(aabb math.AABB3D, bounds ScreenBounds, surfaceBuffe
 
 	// Recursive step: Subdivide the AABB into 8 smaller boxes.
 	mx, my, mz := (aabb.Min.X+aabb.Max.X)/2, (aabb.Min.Y+aabb.Max.Y)/2, (aabb.Min.Z+aabb.Max.Z)/2
-	xs := [3]float64{aabb.Min.X, mx, aabb.Max.X}
-	ys := [3]float64{aabb.Min.Y, my, aabb.Max.Y}
-	zs := [3]float64{aabb.Min.Z, mz, aabb.Max.Z}
+	subdivisions := []*math.AABB3D{
+		{Min: math.Point3D{X: aabb.Min.X, Y: aabb.Min.Y, Z: aabb.Min.Z}, Max: math.Point3D{X: mx, Y: my, Z: mz}}, // Bottom-left-front
+		{Min: math.Point3D{X: mx, Y: aabb.Min.Y, Z: aabb.Min.Z}, Max: math.Point3D{X: aabb.Max.X, Y: my, Z: mz}}, // Bottom-right-front
+		{Min: math.Point3D{X: aabb.Min.X, Y: my, Z: aabb.Min.Z}, Max: math.Point3D{X: mx, Y: aabb.Max.Y, Z: mz}}, // Top-left-front
+		{Min: math.Point3D{X: mx, Y: my, Z: aabb.Min.Z}, Max: math.Point3D{X: aabb.Max.X, Y: aabb.Max.Y, Z: mz}}, // Top-right-front
+		{Min: math.Point3D{X: aabb.Min.X, Y: aabb.Min.Y, Z: mz}, Max: math.Point3D{X: mx, Y: my, Z: aabb.Max.Z}}, // Bottom-left-back
+		{Min: math.Point3D{X: mx, Y: aabb.Min.Y, Z: mz}, Max: math.Point3D{X: aabb.Max.X, Y: my, Z: aabb.Max.Z}}, // Bottom-right-back
+		{Min: math.Point3D{X: aabb.Min.X, Y: my, Z: mz}, Max: math.Point3D{X: mx, Y: aabb.Max.Y, Z: aabb.Max.Z}}, // Top-left-back
+		{Min: math.Point3D{X: mx, Y: my, Z: mz}, Max: math.Point3D{X: aabb.Max.X, Y: aabb.Max.Y, Z: aabb.Max.Z}}, // Top-right-back
+	}
 
-	for zi := 0; zi < 2; zi++ {
-		for xi := 0; xi < 2; xi++ {
-			for yi := 0; yi < 2; yi++ {
-				r.subdivide(math.AABB3D{
-					Min: math.Point3D{X: xs[xi], Y: ys[yi], Z: zs[zi]},
-					Max: math.Point3D{X: xs[xi+1], Y: ys[yi+1], Z: zs[zi+1]},
-				}, bounds, surfaceBuffer, primaryShapes, fullScene)
-			}
-		}
+	for _, subAABB := range subdivisions {
+		r.subdivide(*subAABB, bounds, surfaceBuffer, intersectingShapes, prng)
 	}
 }
