@@ -102,3 +102,6 @@ func (c Cone3D) GetCenter() math.Point3D {
 		Z: c.Center.Z,
 	}
 }
+
+// IsVolumetric returns false for Cone3D.
+func (c Cone3D) IsVolumetric() bool { return false }

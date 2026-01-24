@@ -35,23 +35,20 @@ type LightConfig struct {
 }
 
 type ShapeConfig struct {
-	Type   string        `json:"type"`
-	Center math.Point3D  `json:"center,omitempty"`
-	Radius float64       `json:"radius,omitempty"`
-	Point  math.Point3D  `json:"point,omitempty"`
-	Normal math.Normal3D `json:"normal,omitempty"`
-	// New fields for Box and Cylinder
-	Min    math.Point3D `json:"min,omitempty"`
-	Max    math.Point3D `json:"max,omitempty"`
-	Height float64      `json:"height,omitempty"`
-	// ---
-	Color             color.RGBA  `json:"color"`
-	Shininess         *float64    `json:"shininess,omitempty"`
-	SpecularIntensity *float64    `json:"specularIntensity,omitempty"`
-	SpecularColor     *color.RGBA `json:"specularColor,omitempty"`
+	Type              string        `json:"type"`
+	Center            math.Point3D  `json:"center,omitempty"`
+	Radius            float64       `json:"radius,omitempty"`
+	Point             math.Point3D  `json:"point,omitempty"`
+	Normal            math.Normal3D `json:"normal,omitempty"`
+	Min               math.Point3D  `json:"min,omitempty"`
+	Max               math.Point3D  `json:"max,omitempty"`
+	Height            float64       `json:"height,omitempty"`
+	Density           float64       `json:"density,omitempty"`
+	Color             color.RGBA    `json:"color"`
+	Shininess         *float64      `json:"shininess,omitempty"`
+	SpecularIntensity *float64      `json:"specularIntensity,omitempty"`
+	SpecularColor     *color.RGBA   `json:"specularColor,omitempty"`
 }
-
-
 
 func LoadScene(filepath string) (camera.Camera, []geometry.Shape, *shading.Light, shading.AtmosphereConfig, float64, float64, error) {
 	file, err := os.ReadFile(filepath)
@@ -149,6 +146,16 @@ func LoadScene(filepath string) (camera.Camera, []geometry.Shape, *shading.Light
 				Shininess:         shininess,
 				SpecularIntensity: specularIntensity,
 				SpecularColor:     specularColor,
+			})
+		case "volume_box":
+			shapes = append(shapes, geometry.VolumeBox{
+				Min:               shapeConfig.Min,
+				Max:               shapeConfig.Max,
+				Color:             shapeConfig.Color,
+				Shininess:         shininess,
+				SpecularIntensity: specularIntensity,
+				SpecularColor:     specularColor,
+				Density:           shapeConfig.Density,
 			})
 		default:
 			return nil, nil, nil, shading.AtmosphereConfig{}, 0, 0, fmt.Errorf("unknown shape type: %s", shapeConfig.Type)

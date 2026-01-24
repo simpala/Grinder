@@ -16,9 +16,11 @@ type Shape interface {
 	GetSpecularColor() color.RGBA
 	GetAABB() math.AABB3D
 	GetCenter() math.Point3D
+	IsVolumetric() bool
 }
 
-
-
-
-
+// VolumetricShape defines the interface for all volumetric objects in the scene.
+type VolumetricShape interface {
+	Shape
+	GetDensity() float64
+}
