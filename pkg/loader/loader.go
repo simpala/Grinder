@@ -106,7 +106,7 @@ func LoadScene(filepath string) (camera.Camera, []geometry.Shape, *shading.Light
 
 		switch shapeConfig.Type {
 		case "sphere":
-			shapes = append(shapes, geometry.Sphere3D{
+			shapes = append(shapes, &geometry.Sphere3D{
 				Center:            shapeConfig.Center,
 				Radius:            shapeConfig.Radius,
 				Color:             shapeConfig.Color,
@@ -116,7 +116,7 @@ func LoadScene(filepath string) (camera.Camera, []geometry.Shape, *shading.Light
 				Motion:            shapeConfig.Motion,
 			})
 		case "plane":
-			shapes = append(shapes, geometry.Plane3D{
+			shapes = append(shapes, &geometry.Plane3D{
 				Point:             shapeConfig.Point,
 				Normal:            shapeConfig.Normal,
 				Color:             shapeConfig.Color,
@@ -125,7 +125,7 @@ func LoadScene(filepath string) (camera.Camera, []geometry.Shape, *shading.Light
 				SpecularColor:     specularColor,
 			})
 		case "box":
-			shapes = append(shapes, geometry.Box3D{
+			shapes = append(shapes, &geometry.Box3D{
 				Min:               shapeConfig.Min,
 				Max:               shapeConfig.Max,
 				Color:             shapeConfig.Color,
@@ -136,7 +136,7 @@ func LoadScene(filepath string) (camera.Camera, []geometry.Shape, *shading.Light
 			})
 
 		case "cylinder":
-			shapes = append(shapes, geometry.Cylinder3D{
+			shapes = append(shapes, &geometry.Cylinder3D{
 				Center:            shapeConfig.Center, // Base center
 				Radius:            shapeConfig.Radius,
 				Height:            shapeConfig.Height,
@@ -147,7 +147,7 @@ func LoadScene(filepath string) (camera.Camera, []geometry.Shape, *shading.Light
 				Motion:            shapeConfig.Motion,
 			})
 		case "cone":
-			shapes = append(shapes, geometry.Cone3D{
+			shapes = append(shapes, &geometry.Cone3D{
 				Center:            shapeConfig.Center,
 				Radius:            shapeConfig.Radius,
 				Height:            shapeConfig.Height,
@@ -158,7 +158,7 @@ func LoadScene(filepath string) (camera.Camera, []geometry.Shape, *shading.Light
 				Motion:            shapeConfig.Motion,
 			})
 		case "volume_box":
-			shapes = append(shapes, geometry.VolumeBox{
+			shapes = append(shapes, &geometry.VolumeBox{
 				Min:               shapeConfig.Min,
 				Max:               shapeConfig.Max,
 				Color:             shapeConfig.Color,

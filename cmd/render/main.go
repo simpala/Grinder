@@ -12,38 +12,7 @@ import (
 	"os"
 	"runtime"
 	"sync"
-
-	"github.com/hajimehoshi/ebiten/v2"
 )
-
-// Game holds the Ebitengine game state.
-type Game struct {
-	MasterImage *image.RGBA
-	mu          *sync.Mutex
-}
-
-// Update proceeds the game state.
-// Update is called every tick (1/60 [s] by default).
-func (g *Game) Update() error {
-	// We don't need to update any state here.
-	return nil
-}
-
-// Draw draws the game screen.
-// Draw is called every frame (typically 1/60[s] for 60Hz display).
-func (g *Game) Draw(screen *ebiten.Image) {
-	g.mu.Lock()
-	defer g.mu.Unlock()
-	if g.MasterImage != nil {
-		screen.WritePixels(g.MasterImage.Pix)
-	}
-}
-
-// Layout takes the outside size (e.g., the window size) and returns the (logical) screen size.
-// If you don't have to adjust the screen size with the outside size, just return a fixed size.
-func (g *Game) Layout(outsideWidth, outsideHeight int) (screenWidth, screenHeight int) {
-	return 512, 512 // Should match the image dimensions
-}
 
 const sampleScene = `{
   "camera": {
@@ -186,13 +155,7 @@ func main() {
 			saveImage()
 		}()
 
-		game := &Game{MasterImage: finalImage, mu: &mu}
-		ebiten.SetWindowSize(width, height)
-		ebiten.SetWindowTitle("Grinder Live Preview")
-
-		if err := ebiten.RunGame(game); err != nil {
-			log.Fatalf("Ebitengine error: %v", err)
-		}
+		runGame(finalImage, &mu)
 	} else {
 		// Headless Mode: Block here until all workers call wg.Done()
 		wg.Wait()
