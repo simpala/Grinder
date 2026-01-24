@@ -30,6 +30,7 @@ type SurfaceData struct {
 type VolumeSample struct {
 	Shape    geometry.VolumetricShape
 	Interval float64 // The length of the ray segment within the volume
+	Depth    float64 // The z-depth of the sample
 }
 
 // Renderer is a configurable rendering engine.
@@ -143,23 +144,8 @@ func (r *Renderer) Render(bounds ScreenBounds) *image.RGBA {
 		for x := 0; x < tileWidth; x++ {
 			surface := surfaceBuffer[y][x]
 
-			// 1. Start with the background color
-			finalColor := shading.ApplyAtmosphere(r.bgColor, r.Far, r.Atmosphere)
-
-			// 2. Volumetric Composition
-			if len(surface.VolumeSamples) > 0 {
-				for _, sample := range surface.VolumeSamples {
-					volColor := sample.Shape.GetColor()
-					density := sample.Shape.GetDensity()
-					blendFactor := gomath.Min(1.0, density*sample.Interval)
-
-					finalColor.R = uint8(float64(finalColor.R)*(1-blendFactor) + float64(volColor.R)*blendFactor)
-					finalColor.G = uint8(float64(finalColor.G)*(1-blendFactor) + float64(volColor.G)*blendFactor)
-					finalColor.B = uint8(float64(finalColor.B)*(1-blendFactor) + float64(volColor.B)*blendFactor)
-				}
-			}
-
-			// 3. Composite Solid Surface
+			// 1. Determine the background color (either a solid surface or the scene background)
+			var bgColor color.RGBA
 			if surface.Hit {
 				var rTotal, gTotal, bTotal float64
 				gridSize := int(gomath.Sqrt(float64(r.Light.Samples)))
@@ -168,8 +154,7 @@ func (r *Renderer) Render(bounds ScreenBounds) *image.RGBA {
 				}
 				totalSamples := float64(gridSize * gridSize)
 
-				pixelCenterP := r.Camera.Project(float64(bounds.MinX+x)/float64(r.Width), float64(bounds.MinY+y)/float64(r.Height), surface.Depth)
-				lightVec := r.Light.Position.Sub(pixelCenterP)
+				lightVec := r.Light.Position.Sub(surface.P)
 				lightDir := lightVec.Normalize()
 
 				var up math.Point3D
@@ -217,7 +202,26 @@ func (r *Renderer) Render(bounds ScreenBounds) *image.RGBA {
 					B: uint8(bTotal / totalSamples),
 					A: 255,
 				}
-				finalColor = shading.ApplyAtmosphere(surfaceColor, surface.Depth, r.Atmosphere)
+				bgColor = shading.ApplyAtmosphere(surfaceColor, surface.Depth, r.Atmosphere)
+			} else {
+				bgColor = shading.ApplyAtmosphere(r.bgColor, r.Far, r.Atmosphere)
+			}
+
+			// 2. Composite Volumetric Samples
+			finalColor := bgColor
+			if len(surface.VolumeSamples) > 0 {
+				for _, sample := range surface.VolumeSamples {
+					// Only composite samples that are in front of the solid surface
+					if !surface.Hit || sample.Depth < surface.Depth {
+						volColor := sample.Shape.GetColor()
+						density := sample.Shape.GetDensity()
+						blendFactor := gomath.Min(1.0, density*sample.Interval)
+
+						finalColor.R = uint8(float64(finalColor.R)*(1-blendFactor) + float64(volColor.R)*blendFactor)
+						finalColor.G = uint8(float64(finalColor.G)*(1-blendFactor) + float64(volColor.G)*blendFactor)
+						finalColor.B = uint8(float64(finalColor.B)*(1-blendFactor) + float64(volColor.B)*blendFactor)
+					}
+				}
 			}
 
 			img.Set(x, y, finalColor)
@@ -255,6 +259,7 @@ func (r *Renderer) subdivide(aabb math.AABB3D, bounds ScreenBounds, surfaceBuffe
 									surfaceBuffer[tileY][tileX].VolumeSamples = append(surfaceBuffer[tileY][tileX].VolumeSamples, VolumeSample{
 										Shape:    s.(geometry.VolumetricShape),
 										Interval: interval,
+										Depth:    zSample,
 									})
 								}
 							}
