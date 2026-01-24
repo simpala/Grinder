@@ -102,97 +102,6 @@ func (r *Renderer) FitDepthPlanes() { // this should fix banding on ill fitting 
 	r.Far = maxDist * 1.1
 }
 
-// Render performs the recursive subdivision rendering for a specific screen area.
-// It returns a new image containing only the rendered tile.
-// func (r *Renderer) Render(bounds ScreenBounds) *image.RGBA {
-// 	tileWidth := bounds.MaxX - bounds.MinX
-// 	tileHeight := bounds.MaxY - bounds.MinY
-// 	img := image.NewRGBA(image.Rect(0, 0, tileWidth, tileHeight))
-// 	surfaceBuffer := make([][]SurfaceData, tileHeight)
-// 	for i := range surfaceBuffer {
-// 		surfaceBuffer[i] = make([]SurfaceData, tileWidth)
-// 	}
-
-// 	// Initial AABB for the specified screen bounds
-// 	initialAABB := math.AABB3D{
-// 		Min: math.Point3D{X: float64(bounds.MinX) / float64(r.Width), Y: float64(bounds.MinY) / float64(r.Height), Z: r.Near},
-// 		Max: math.Point3D{X: float64(bounds.MaxX) / float64(r.Width), Y: float64(bounds.MaxY) / float64(r.Height), Z: r.Far},
-// 	}
-
-// 	// Do not cull. AABB culling is incorrect for rotated shapes.
-// 	// The painter's algorithm with depth testing is the ground truth.
-// 	primaryShapes := make([]geometry.Shape, len(r.Shapes))
-// 	copy(primaryShapes, r.Shapes)
-
-// 	// Sort shapes from Furthest to Closest relative to the camera
-// 	sort.Slice(primaryShapes, func(i, j int) bool {
-// 		distI := primaryShapes[i].GetCenter().Sub(r.Camera.GetEye()).Length()
-// 		distJ := primaryShapes[j].GetCenter().Sub(r.Camera.GetEye()).Length()
-// 		return distI > distJ
-// 	})
-
-// 	r.subdivide(initialAABB, bounds, surfaceBuffer, primaryShapes, r.Shapes)
-
-// 	// Pass 2: The Final Overdraw (Shading & SSAA)
-// 	prng := math.NewXorShift32(uint32(bounds.MinX*r.Width + bounds.MinY))
-// 	for y := 0; y < tileHeight; y++ {
-// 		for x := 0; x < tileWidth; x++ {
-// 			surface := surfaceBuffer[y][x]
-// 			if surface.Hit {
-// 				var rTotal, gTotal, bTotal float64
-// 				samples := 9
-
-// 				for i := 0; i < samples; i++ {
-// 					// Jittered sample point for SSAA
-// 					sx := (float64(bounds.MinX+x) + prng.NextFloat64()) / float64(r.Width)
-// 					sy := (float64(bounds.MinY+y) + prng.NextFloat64()) / float64(r.Height)
-
-// 					// We use the original hit point's depth (Z) for the sample ray
-// 					worldP := r.Camera.Project(sx, sy, surface.Depth)
-
-// 					// Jitter the light position for soft shadows
-// 					var jitteredLight shading.Light
-// 					if r.Light.Radius > 0 {
-// 						var offsetX, offsetY, offsetZ float64
-// 						// Rejection sampling for a uniform spherical distribution
-// 						for {
-// 							offsetX = (prng.NextFloat64()*2 - 1) * r.Light.Radius
-// 							offsetY = (prng.NextFloat64()*2 - 1) * r.Light.Radius
-// 							offsetZ = (prng.NextFloat64()*2 - 1) * r.Light.Radius
-// 							if offsetX*offsetX+offsetY*offsetY+offsetZ*offsetZ <= r.Light.Radius*r.Light.Radius {
-// 								break
-// 							}
-// 						}
-// 						jitteredLight = shading.Light{
-// 							Position:  r.Light.Position.Add(math.Point3D{X: offsetX, Y: offsetY, Z: offsetZ}),
-// 							Intensity: r.Light.Intensity,
-// 							Radius:    r.Light.Radius,
-// 						}
-// 					} else {
-// 						jitteredLight = r.Light
-// 					}
-
-// 					// Use the pre-calculated normal from the Dicer pass
-// 					finalColor := shading.ShadedColor(worldP, surface.N, r.Camera.GetEye(), jitteredLight, surface.S, r.Shapes)
-// 					rTotal += float64(finalColor.R)
-// 					gTotal += float64(finalColor.G)
-// 					bTotal += float64(finalColor.B)
-// 				}
-
-// 				img.Set(x, y, color.RGBA{
-// 					R: uint8(rTotal / float64(samples)),
-// 					G: uint8(gTotal / float64(samples)),
-// 					B: uint8(bTotal / float64(samples)),
-// 					A: 255,
-// 				})
-// 			} else {
-// 				img.Set(x, y, r.bgColor)
-// 			}
-// 		}
-// 	}
-
-//		return img
-//	}
 func (r *Renderer) Render(bounds ScreenBounds) *image.RGBA {
 	tileWidth := bounds.MaxX - bounds.MinX
 	tileHeight := bounds.MaxY - bounds.MinY
@@ -228,7 +137,7 @@ func (r *Renderer) Render(bounds ScreenBounds) *image.RGBA {
 			surface := surfaceBuffer[y][x]
 
 			if !surface.Hit {
-				img.Set(x, y, r.bgColor)
+				img.Set(x, y, shading.ApplyAtmosphere(r.bgColor, r.Far, r.Atmosphere))
 				continue
 			}
 
@@ -281,8 +190,8 @@ func (r *Renderer) Render(bounds ScreenBounds) *image.RGBA {
 						jitteredLight = r.Light
 					}
 
-					//finalColor := shading.ShadedColor(worldP, surface.N, r.Camera.GetEye(), jitteredLight, surface.S, r.Shapes)
-					finalColor := shading.ShadedColor(worldP, surface.N, r.Camera.GetEye(), jitteredLight, surface.S, r.Shapes)
+					shadedColor := shading.ShadedColor(worldP, surface.N, r.Camera.GetEye(), jitteredLight, surface.S, r.Shapes)
+					finalColor := shading.ApplyAtmosphere(shadedColor, surface.Depth, r.Atmosphere)
 
 					rTotal += float64(finalColor.R)
 					gTotal += float64(finalColor.G)
