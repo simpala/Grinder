@@ -7,10 +7,43 @@ import (
 	"grinder/pkg/renderer"
 	"image"
 	"image/draw"
+	"log"
 	"image/png"
 	"os"
+	"runtime"
 	"sync"
+
+	"github.com/hajimehoshi/ebiten/v2"
 )
+
+// Game holds the Ebitengine game state.
+type Game struct {
+	MasterImage *image.RGBA
+	mu          *sync.Mutex
+}
+
+// Update proceeds the game state.
+// Update is called every tick (1/60 [s] by default).
+func (g *Game) Update() error {
+	// We don't need to update any state here.
+	return nil
+}
+
+// Draw draws the game screen.
+// Draw is called every frame (typically 1/60[s] for 60Hz display).
+func (g *Game) Draw(screen *ebiten.Image) {
+	g.mu.Lock()
+	defer g.mu.Unlock()
+	if g.MasterImage != nil {
+		screen.WritePixels(g.MasterImage.Pix)
+	}
+}
+
+// Layout takes the outside size (e.g., the window size) and returns the (logical) screen size.
+// If you don't have to adjust the screen size with the outside size, just return a fixed size.
+func (g *Game) Layout(outsideWidth, outsideHeight int) (screenWidth, screenHeight int) {
+	return 512, 512 // Should match the image dimensions
+}
 
 const sampleScene = `{
   "camera": {
@@ -46,14 +79,10 @@ const sampleScene = `{
   ]
 }`
 
-// RenderedTile holds the result of a tile rendering operation.
-type RenderedTile struct {
-	Bounds renderer.ScreenBounds
-	Image  *image.RGBA
-}
 
 func main() {
 	scenePath := flag.String("scene", "", "Path to the scene JSON file")
+	fb := flag.Bool("fb", false, "Enable framebuffer preview window")
 	flag.Parse()
 
 	if *scenePath == "" {
@@ -73,55 +102,85 @@ func main() {
 	width, height := 512, 512
 	// Pass 'atmos' as the final argument to NewRenderer
 	rndr := renderer.NewRenderer(cam, scene, *light, width, height, 0.004, near, far, atmos)
+	rndr.FitDepthPlanes()
 
 	fmt.Println("Rendering...")
 
 	// --- Tiling and Concurrency ---
-	const numTilesX, numTilesY = 4, 4
-	tileWidth, tileHeight := width/numTilesX, height/numTilesY
-
+	const tileSize = 64
+	numTilesX := width / tileSize
+	numTilesY := height / tileSize
+	jobs := make(chan renderer.ScreenBounds, numTilesX*numTilesY)
 	var wg sync.WaitGroup
-	renderedTiles := make(chan RenderedTile, numTilesX*numTilesY)
 
-	for y := 0; y < numTilesY; y++ {
-		for x := 0; x < numTilesX; x++ {
-			wg.Add(1)
-			go func(x, y int) {
-				defer wg.Done()
-				bounds := renderer.ScreenBounds{
-					MinX: x * tileWidth,
-					MinY: y * tileHeight,
-					MaxX: (x + 1) * tileWidth,
-					MaxY: (y + 1) * tileHeight,
-				}
-				tileImg := rndr.Render(bounds)
-				renderedTiles <- RenderedTile{Bounds: bounds, Image: tileImg}
-			}(x, y)
+	finalImage := image.NewRGBA(image.Rect(0, 0, width, height))
+
+	// --- Worker and Main Logic ---
+	var mu sync.Mutex
+	worker := func() {
+		for bounds := range jobs {
+			tileImg := rndr.Render(bounds)
+			mu.Lock()
+			rect := image.Rect(bounds.MinX, bounds.MinY, bounds.MaxX, bounds.MaxY)
+			draw.Draw(finalImage, rect, tileImg, image.Point{0, 0}, draw.Src)
+			mu.Unlock()
+			wg.Done()
 		}
 	}
 
-	// Wait for all rendering to complete, then close the channel.
+	for i := 0; i < runtime.NumCPU(); i++ {
+		go worker()
+	}
+
+	// This function sends all the jobs and then closes the channel.
 	go func() {
-		wg.Wait()
-		close(renderedTiles)
+		for y := 0; y < height; y += tileSize {
+			for x := 0; x < width; x += tileSize {
+				wg.Add(1)
+				jobs <- renderer.ScreenBounds{
+					MinX: x,
+					MinY: y,
+					MaxX: x + tileSize,
+					MaxY: y + tileSize,
+				}
+			}
+		}
 	}()
 
-	// --- Image Assembly ---
-	finalImage := image.NewRGBA(image.Rect(0, 0, width, height))
-	for tile := range renderedTiles {
-		rect := image.Rect(tile.Bounds.MinX, tile.Bounds.MinY, tile.Bounds.MaxX, tile.Bounds.MaxY)
-		draw.Draw(finalImage, rect, tile.Image, image.Point{0, 0}, draw.Src)
+	// --- Main Control Flow ---
+	if *fb {
+		// In framebuffer mode, we need to wait for rendering in a separate goroutine
+		// so the main thread can run the Ebitengine game loop.
+		go func() {
+			wg.Wait()
+			close(jobs)
+		}()
+
+		game := &Game{MasterImage: finalImage, mu: &mu}
+		ebiten.SetWindowSize(width, height)
+		ebiten.SetWindowTitle("Grinder Live Preview")
+		if err := ebiten.RunGame(game); err != nil {
+			log.Fatalf("Ebitengine error: %v", err)
+		}
+	} else {
+		// In headless mode, we block the main thread until rendering is complete.
+		wg.Wait()
+		close(jobs)
 	}
 
-	f, err := os.Create("render.png")
-	if err != nil {
-		panic(err)
-	}
-	defer f.Close()
+	// Save the final image. This runs after the Ebitengine window is closed,
+	// or after rendering is complete in headless mode.
+	saveImage := func() {
+		f, err := os.Create("render.png")
+		if err != nil {
+			log.Fatalf("Failed to create render.png: %v", err)
+		}
+		defer f.Close()
 
-	if err := png.Encode(f, finalImage); err != nil {
-		panic(err)
+		if err := png.Encode(f, finalImage); err != nil {
+			log.Fatalf("Failed to encode PNG: %v", err)
+		}
+		fmt.Println("Saved to render.png")
 	}
-
-	fmt.Println("Saved to render.png")
+	saveImage()
 }
