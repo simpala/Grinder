@@ -86,3 +86,6 @@ func (c Cylinder3D) GetCenter() math.Point3D {
 		Z: c.Center.Z,
 	}
 }
+
+// IsVolumetric returns false for Cylinder3D.
+func (c Cylinder3D) IsVolumetric() bool { return false }

@@ -64,3 +64,6 @@ func (s Sphere3D) GetAABB() math.AABB3D {
 func (s Sphere3D) GetCenter() math.Point3D {
 	return s.Center
 }
+
+// IsVolumetric returns false for Sphere3D.
+func (s Sphere3D) IsVolumetric() bool { return false }

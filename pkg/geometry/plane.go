@@ -78,3 +78,6 @@ func (pl Plane3D) GetAABB() math.AABB3D {
 func (pl Plane3D) GetCenter() math.Point3D {
 	return pl.Point
 }
+
+// IsVolumetric returns false for Plane3D.
+func (pl Plane3D) IsVolumetric() bool { return false }
