@@ -7,8 +7,8 @@ import (
 	"grinder/pkg/renderer"
 	"image"
 	"image/draw"
-	"log"
 	"image/png"
+	"log"
 	"os"
 	"runtime"
 	"sync"
@@ -79,7 +79,6 @@ const sampleScene = `{
   ]
 }`
 
-
 func main() {
 	scenePath := flag.String("scene", "", "Path to the scene JSON file")
 	fb := flag.Bool("fb", false, "Enable framebuffer preview window")
@@ -100,7 +99,6 @@ func main() {
 	}
 
 	width, height := 512, 512
-	// Pass 'atmos' as the final argument to NewRenderer
 	rndr := renderer.NewRenderer(cam, scene, *light, width, height, 0.004, near, far, atmos)
 	rndr.FitDepthPlanes()
 
@@ -110,67 +108,19 @@ func main() {
 	const tileSize = 64
 	numTilesX := width / tileSize
 	numTilesY := height / tileSize
+
+	// Create a channel with enough buffer for all jobs
 	jobs := make(chan renderer.ScreenBounds, numTilesX*numTilesY)
 	var wg sync.WaitGroup
 
 	finalImage := image.NewRGBA(image.Rect(0, 0, width, height))
-
-	// --- Worker and Main Logic ---
 	var mu sync.Mutex
-	worker := func() {
-		for bounds := range jobs {
-			tileImg := rndr.Render(bounds)
-			mu.Lock()
-			rect := image.Rect(bounds.MinX, bounds.MinY, bounds.MaxX, bounds.MaxY)
-			draw.Draw(finalImage, rect, tileImg, image.Point{0, 0}, draw.Src)
-			mu.Unlock()
-			wg.Done()
-		}
-	}
 
-	for i := 0; i < runtime.NumCPU(); i++ {
-		go worker()
-	}
-
-	// This function sends all the jobs and then closes the channel.
-	go func() {
-		for y := 0; y < height; y += tileSize {
-			for x := 0; x < width; x += tileSize {
-				wg.Add(1)
-				jobs <- renderer.ScreenBounds{
-					MinX: x,
-					MinY: y,
-					MaxX: x + tileSize,
-					MaxY: y + tileSize,
-				}
-			}
-		}
-	}()
-
-	// --- Main Control Flow ---
-	if *fb {
-		// In framebuffer mode, we need to wait for rendering in a separate goroutine
-		// so the main thread can run the Ebitengine game loop.
-		go func() {
-			wg.Wait()
-			close(jobs)
-		}()
-
-		game := &Game{MasterImage: finalImage, mu: &mu}
-		ebiten.SetWindowSize(width, height)
-		ebiten.SetWindowTitle("Grinder Live Preview")
-		if err := ebiten.RunGame(game); err != nil {
-			log.Fatalf("Ebitengine error: %v", err)
-		}
-	} else {
-		// In headless mode, we block the main thread until rendering is complete.
-		wg.Wait()
-		close(jobs)
-	}
-
-	// Save the final image. This runs after the Ebitengine window is closed,
-	// or after rendering is complete in headless mode.
+	// Define the save function early so it's in scope for all blocks
 	saveImage := func() {
+		mu.Lock() // Ensure we aren't saving while a worker is mid-draw
+		defer mu.Unlock()
+
 		f, err := os.Create("render.png")
 		if err != nil {
 			log.Fatalf("Failed to create render.png: %v", err)
@@ -182,5 +132,61 @@ func main() {
 		}
 		fmt.Println("Saved to render.png")
 	}
-	saveImage()
+
+	// --- WORKER POOL ---
+	worker := func() {
+		for bounds := range jobs {
+			tileImg := rndr.Render(bounds)
+			mu.Lock()
+			rect := image.Rect(bounds.MinX, bounds.MinY, bounds.MaxX, bounds.MaxY)
+			draw.Draw(finalImage, rect, tileImg, image.Point{0, 0}, draw.Src)
+			mu.Unlock()
+			wg.Done()
+		}
+	}
+
+	// 1. IMPORTANT: Pre-add to the WaitGroup so wg.Wait() doesn't bypass early
+	totalTiles := numTilesX * numTilesY
+	wg.Add(totalTiles)
+
+	// 2. Start the workers
+	for i := 0; i < runtime.NumCPU(); i++ {
+		go worker()
+	}
+
+	// 3. Feed the jobs
+	go func() {
+		for y := 0; y < height; y += tileSize {
+			for x := 0; x < width; x += tileSize {
+				jobs <- renderer.ScreenBounds{
+					MinX: x, MinY: y,
+					MaxX: x + tileSize, MaxY: y + tileSize,
+				}
+			}
+		}
+		close(jobs)
+	}()
+
+	// --- MAIN CONTROL FLOW ---
+	if *fb {
+		// FB Mode: Save in background when done, but keep window open
+		go func() {
+			wg.Wait()
+			fmt.Println("Render complete. Saving auto-snapshot...")
+			saveImage()
+		}()
+
+		game := &Game{MasterImage: finalImage, mu: &mu}
+		ebiten.SetWindowSize(width, height)
+		ebiten.SetWindowTitle("Grinder Live Preview")
+
+		if err := ebiten.RunGame(game); err != nil {
+			log.Fatalf("Ebitengine error: %v", err)
+		}
+	} else {
+		// Headless Mode: Block here until all workers call wg.Done()
+		wg.Wait()
+		fmt.Println("Render complete. Saving...")
+		saveImage()
+	}
 }
