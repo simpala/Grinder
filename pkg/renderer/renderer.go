@@ -194,7 +194,6 @@ func (r *Renderer) FitDepthPlanes() { // this should fix banding on ill fitting 
 //		return img
 //	}
 func (r *Renderer) Render(bounds ScreenBounds) *image.RGBA {
-	r.FitDepthPlanes()
 	tileWidth := bounds.MaxX - bounds.MinX
 	tileHeight := bounds.MaxY - bounds.MinY
 	img := image.NewRGBA(image.Rect(0, 0, tileWidth, tileHeight))
