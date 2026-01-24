@@ -7,7 +7,8 @@ import (
 
 // Shape defines the interface for all geometric objects in the scene.
 type Shape interface {
-	Contains(p math.Point3D, t float64) bool
+	AtTime(t float64) Shape
+	Contains(p math.Point3D, time float64) bool
 	Intersects(aabb math.AABB3D) bool
 	NormalAtPoint(p math.Point3D, t float64) math.Normal3D
 	GetColor() color.RGBA

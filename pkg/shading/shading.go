@@ -37,7 +37,7 @@ func calculateShadowAttenuation(p, lightPos math.Point3D, shapes []geometry.Shap
 	for t := stepSize; t < distToLight; t += stepSize {
 		samplePoint := p.Add(dirToLight.Mul(t))
 		for _, shape := range shapes {
-			if _, ok := shape.(geometry.Plane3D); ok {
+			if _, ok := shape.(*geometry.Plane3D); ok {
 				continue
 			}
 			if shape.Contains(samplePoint, time) {

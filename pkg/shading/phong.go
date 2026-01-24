@@ -34,11 +34,12 @@ func ShadedColor(p math.Point3D, n math.Normal3D, eye math.Point3D, l Light, sha
 	// Filter shapes to only those that could possibly cast a shadow.
 	occluders := make([]geometry.Shape, 0)
 	for _, s := range shapes {
-		if s == shape {
+		shapeAtT := s.AtTime(time)
+		if shapeAtT == shape {
 			continue // Don't check self
 		}
-		if s.GetAABB().Intersects(cullAABB) {
-			occluders = append(occluders, s)
+		if shapeAtT.GetAABB().Intersects(cullAABB) {
+			occluders = append(occluders, shapeAtT)
 		}
 	}
 

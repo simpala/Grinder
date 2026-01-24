@@ -16,7 +16,7 @@ type Box3D struct {
 	Motion            []motion.Keyframe
 }
 
-func (b Box3D) Contains(p math.Point3D, t float64) bool {
+func (b *Box3D) Contains(p math.Point3D, t float64) bool {
 	center := b.CenterAt(t)
 	halfSize := b.Max.Sub(b.Min).Mul(0.5)
 	min := center.Sub(halfSize)
@@ -26,14 +26,14 @@ func (b Box3D) Contains(p math.Point3D, t float64) bool {
 		p.Z >= min.Z && p.Z <= max.Z
 }
 
-func (b Box3D) Intersects(aabb math.AABB3D) bool {
+func (b *Box3D) Intersects(aabb math.AABB3D) bool {
 	// Standard AABB-AABB intersection
 	return (b.Min.X <= aabb.Max.X && b.Max.X >= aabb.Min.X) &&
 		(b.Min.Y <= aabb.Max.Y && b.Max.Y >= aabb.Min.Y) &&
 		(b.Min.Z <= aabb.Max.Z && b.Max.Z >= aabb.Min.Z)
 }
 
-func (b Box3D) NormalAtPoint(p math.Point3D, t float64) math.Normal3D {
+func (b *Box3D) NormalAtPoint(p math.Point3D, t float64) math.Normal3D {
 	center := b.CenterAt(t)
 	halfSize := b.Max.Sub(b.Min).Mul(0.5)
 	min := center.Sub(halfSize)
@@ -57,7 +57,7 @@ func (b Box3D) NormalAtPoint(p math.Point3D, t float64) math.Normal3D {
 	return math.Normal3D{X: 0, Y: 0, Z: 1}
 }
 
-func (b Box3D) CenterAt(t float64) math.Point3D {
+func (b *Box3D) CenterAt(t float64) math.Point3D {
 	if len(b.Motion) == 0 {
 		return b.GetCenter()
 	}
@@ -66,18 +66,18 @@ func (b Box3D) CenterAt(t float64) math.Point3D {
 }
 
 // GetColor returns the color of the box.
-func (s Box3D) GetColor() color.RGBA { return s.Color }
+func (s *Box3D) GetColor() color.RGBA { return s.Color }
 
 // GetShininess returns the shininess of the box.
-func (s Box3D) GetShininess() float64 { return s.Shininess }
+func (s *Box3D) GetShininess() float64 { return s.Shininess }
 
 // GetSpecularIntensity returns the specular intensity of the box.
-func (s Box3D) GetSpecularIntensity() float64 { return s.SpecularIntensity }
+func (s *Box3D) GetSpecularIntensity() float64 { return s.SpecularIntensity }
 
 // GetSpecularColor returns the specular color of the box.
-func (s Box3D) GetSpecularColor() color.RGBA { return s.SpecularColor }
+func (s *Box3D) GetSpecularColor() color.RGBA { return s.SpecularColor }
 
-func (b Box3D) GetAABB() math.AABB3D {
+func (b *Box3D) GetAABB() math.AABB3D {
 	if len(b.Motion) == 0 {
 		return math.AABB3D{Min: b.Min, Max: b.Max}
 	}
@@ -96,9 +96,20 @@ func (b Box3D) GetAABB() math.AABB3D {
 }
 
 // GetCenter returns the center of the box.
-func (b Box3D) GetCenter() math.Point3D {
+func (b *Box3D) GetCenter() math.Point3D {
 	return b.Min.Add(b.Max).Mul(0.5)
 }
 
+// AtTime returns a new box interpolated to time t.
+func (b *Box3D) AtTime(t float64) Shape {
+	if len(b.Motion) == 0 {
+		return b
+	}
+	newBox := *b
+	newBox.Min = b.CenterAt(t).Sub(b.Max.Sub(b.Min).Mul(0.5))
+	newBox.Max = b.CenterAt(t).Add(b.Max.Sub(b.Min).Mul(0.5))
+	return &newBox
+}
+
 // IsVolumetric returns false for Box3D.
-func (b Box3D) IsVolumetric() bool { return false }
+func (b *Box3D) IsVolumetric() bool { return false }

@@ -25,10 +25,11 @@ type CameraConfig struct {
 }
 
 type SceneConfig struct {
-	Camera     CameraConfig             `json:"camera"`
-	Light      LightConfig              `json:"light"`
-	Atmosphere shading.AtmosphereConfig `json:"atmosphere"`
-	Shapes     []ShapeConfig            `json:"shapes"`
+	Camera           CameraConfig             `json:"camera"`
+	Light            LightConfig              `json:"light"`
+	Atmosphere       shading.AtmosphereConfig `json:"atmosphere"`
+	Shapes           []ShapeConfig            `json:"shapes"`
+	MotionBlurSamples *int                      `json:"motion_blur_samples,omitempty"`
 }
 type LightConfig struct {
 	Position  math.Point3D `json:"position"`
@@ -54,15 +55,15 @@ type ShapeConfig struct {
 	Motion            []motion.Keyframe    `json:"motion,omitempty"`
 }
 
-func LoadScene(filepath string) (camera.Camera, []geometry.Shape, *shading.Light, shading.AtmosphereConfig, float64, float64, error) {
+func LoadScene(filepath string) (camera.Camera, []geometry.Shape, *shading.Light, shading.AtmosphereConfig, float64, float64, int, error) {
 	file, err := os.ReadFile(filepath)
 	if err != nil {
-		return nil, nil, nil, shading.AtmosphereConfig{}, 0, 0, fmt.Errorf("failed to read scene file: %w", err)
+		return nil, nil, nil, shading.AtmosphereConfig{}, 0, 0, 0, fmt.Errorf("failed to read scene file: %w", err)
 	}
 
 	var config SceneConfig
 	if err := json.Unmarshal(file, &config); err != nil {
-		return nil, nil, nil, shading.AtmosphereConfig{}, 0, 0, fmt.Errorf("failed to parse scene file: %w", err)
+		return nil, nil, nil, shading.AtmosphereConfig{}, 0, 0, 0, fmt.Errorf("failed to parse scene file: %w", err)
 	}
 
 	cam := camera.NewLookAtCamera(
@@ -169,9 +170,14 @@ func LoadScene(filepath string) (camera.Camera, []geometry.Shape, *shading.Light
 				Motion:            shapeConfig.Motion,
 			})
 		default:
-			return nil, nil, nil, shading.AtmosphereConfig{}, 0, 0, fmt.Errorf("unknown shape type: %s", shapeConfig.Type)
+			return nil, nil, nil, shading.AtmosphereConfig{}, 0, 0, 0, fmt.Errorf("unknown shape type: %s", shapeConfig.Type)
 		}
 	}
 
-	return cam, shapes, light, config.Atmosphere, config.Camera.Near, config.Camera.Far, nil
+	motionBlurSamples := 9 // Default value
+	if config.MotionBlurSamples != nil {
+		motionBlurSamples = *config.MotionBlurSamples
+	}
+
+	return cam, shapes, light, config.Atmosphere, config.Camera.Near, config.Camera.Far, motionBlurSamples, nil
 }

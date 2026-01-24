@@ -18,14 +18,14 @@ type Sphere3D struct {
 }
 
 // Contains checks if a point is inside the sphere.
-func (s Sphere3D) Contains(p math.Point3D, t float64) bool {
+func (s *Sphere3D) Contains(p math.Point3D, t float64) bool {
 	center := s.CenterAt(t)
 	dp := p.Sub(center)
 	return dp.Dot(dp) <= s.Radius*s.Radius
 }
 
 // Intersects checks if the sphere intersects with an AABB.
-func (s Sphere3D) Intersects(aabb math.AABB3D) bool {
+func (s *Sphere3D) Intersects(aabb math.AABB3D) bool {
 	closestX := gomath.Max(aabb.Min.X, gomath.Min(s.Center.X, aabb.Max.X))
 	closestY := gomath.Max(aabb.Min.Y, gomath.Min(s.Center.Y, aabb.Max.Y))
 	closestZ := gomath.Max(aabb.Min.Z, gomath.Min(s.Center.Z, aabb.Max.Z))
@@ -37,13 +37,13 @@ func (s Sphere3D) Intersects(aabb math.AABB3D) bool {
 }
 
 // NormalAtPoint returns the normal vector at a given point on the sphere's surface.
-func (s Sphere3D) NormalAtPoint(p math.Point3D, t float64) math.Normal3D {
+func (s *Sphere3D) NormalAtPoint(p math.Point3D, t float64) math.Normal3D {
 	center := s.CenterAt(t)
 	n := p.Sub(center).Normalize()
 	return math.Normal3D{X: n.X, Y: n.Y, Z: n.Z}
 }
 
-func (s Sphere3D) CenterAt(t float64) math.Point3D {
+func (s *Sphere3D) CenterAt(t float64) math.Point3D {
 	if len(s.Motion) == 0 {
 		return s.Center
 	}
@@ -52,19 +52,19 @@ func (s Sphere3D) CenterAt(t float64) math.Point3D {
 }
 
 // GetColor returns the color of the sphere.
-func (s Sphere3D) GetColor() color.RGBA { return s.Color }
+func (s *Sphere3D) GetColor() color.RGBA { return s.Color }
 
 // GetShininess returns the shininess of the sphere.
-func (s Sphere3D) GetShininess() float64 { return s.Shininess }
+func (s *Sphere3D) GetShininess() float64 { return s.Shininess }
 
 // GetSpecularIntensity returns the specular intensity of the sphere.
-func (s Sphere3D) GetSpecularIntensity() float64 { return s.SpecularIntensity }
+func (s *Sphere3D) GetSpecularIntensity() float64 { return s.SpecularIntensity }
 
 // GetSpecularColor returns the specular color of the sphere.
-func (s Sphere3D) GetSpecularColor() color.RGBA { return s.SpecularColor }
+func (s *Sphere3D) GetSpecularColor() color.RGBA { return s.SpecularColor }
 
 // GetAABB returns the bounding box of the sphere.
-func (s Sphere3D) GetAABB() math.AABB3D {
+func (s *Sphere3D) GetAABB() math.AABB3D {
 	if len(s.Motion) == 0 {
 		return math.AABB3D{
 			Min: s.Center.Sub(math.Point3D{X: s.Radius, Y: s.Radius, Z: s.Radius}),
@@ -85,9 +85,19 @@ func (s Sphere3D) GetAABB() math.AABB3D {
 }
 
 // GetCenter returns the sphere's center point.
-func (s Sphere3D) GetCenter() math.Point3D {
+func (s *Sphere3D) GetCenter() math.Point3D {
 	return s.Center
 }
 
+// AtTime returns a new sphere interpolated to time t.
+func (s *Sphere3D) AtTime(t float64) Shape {
+	if len(s.Motion) == 0 {
+		return s
+	}
+	newSphere := *s
+	newSphere.Center = s.CenterAt(t)
+	return &newSphere
+}
+
 // IsVolumetric returns false for Sphere3D.
-func (s Sphere3D) IsVolumetric() bool { return false }
+func (s *Sphere3D) IsVolumetric() bool { return false }

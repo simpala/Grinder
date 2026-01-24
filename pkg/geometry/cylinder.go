@@ -17,7 +17,7 @@ type Cylinder3D struct {
 	Motion            []motion.Keyframe
 }
 
-func (c Cylinder3D) Contains(p math.Point3D, t float64) bool {
+func (c *Cylinder3D) Contains(p math.Point3D, t float64) bool {
 	center := c.CenterAt(t)
 	if p.Y < center.Y || p.Y > center.Y+c.Height {
 		return false
@@ -26,7 +26,7 @@ func (c Cylinder3D) Contains(p math.Point3D, t float64) bool {
 	return (dx*dx + dz*dz) <= c.Radius*c.Radius
 }
 
-func (c Cylinder3D) Intersects(aabb math.AABB3D) bool {
+func (c *Cylinder3D) Intersects(aabb math.AABB3D) bool {
 	// Check Y-range first
 	if aabb.Min.Y > c.Center.Y+c.Height || aabb.Max.Y < c.Center.Y {
 		return false
@@ -40,7 +40,7 @@ func (c Cylinder3D) Intersects(aabb math.AABB3D) bool {
 	return (dx*dx + dz*dz) <= c.Radius*c.Radius
 }
 
-func (c Cylinder3D) NormalAtPoint(p math.Point3D, t float64) math.Normal3D {
+func (c *Cylinder3D) NormalAtPoint(p math.Point3D, t float64) math.Normal3D {
 	center := c.CenterAt(t)
 	eps := 0.0001
 	if p.Y >= center.Y+c.Height-eps {
@@ -53,7 +53,7 @@ func (c Cylinder3D) NormalAtPoint(p math.Point3D, t float64) math.Normal3D {
 	return math.Normal3D{X: n.X, Y: 0, Z: n.Z}
 }
 
-func (c Cylinder3D) CenterAt(t float64) math.Point3D {
+func (c *Cylinder3D) CenterAt(t float64) math.Point3D {
 	if len(c.Motion) == 0 {
 		return c.Center
 	}
@@ -62,19 +62,19 @@ func (c Cylinder3D) CenterAt(t float64) math.Point3D {
 }
 
 // GetColor returns the color of the cylinder.
-func (s Cylinder3D) GetColor() color.RGBA { return s.Color }
+func (s *Cylinder3D) GetColor() color.RGBA { return s.Color }
 
 // GetShininess returns the shininess of the cylinder.
-func (s Cylinder3D) GetShininess() float64 { return s.Shininess }
+func (s *Cylinder3D) GetShininess() float64 { return s.Shininess }
 
 // GetSpecularIntensity returns the specular intensity of the cylinder.
-func (s Cylinder3D) GetSpecularIntensity() float64 { return s.SpecularIntensity }
+func (s *Cylinder3D) GetSpecularIntensity() float64 { return s.SpecularIntensity }
 
 // GetSpecularColor returns the specular color of the cylinder.
-func (s Cylinder3D) GetSpecularColor() color.RGBA { return s.SpecularColor }
+func (s *Cylinder3D) GetSpecularColor() color.RGBA { return s.SpecularColor }
 
 // GetAABB returns the bounding box of the cylinder.
-func (c Cylinder3D) GetAABB() math.AABB3D {
+func (c *Cylinder3D) GetAABB() math.AABB3D {
 	if len(c.Motion) == 0 {
 		return math.AABB3D{
 			Min: math.Point3D{
@@ -111,7 +111,7 @@ func (c Cylinder3D) GetAABB() math.AABB3D {
 }
 
 // GetCenter returns the geometric center of the cylinder.
-func (c Cylinder3D) GetCenter() math.Point3D {
+func (c *Cylinder3D) GetCenter() math.Point3D {
 	return math.Point3D{
 		X: c.Center.X,
 		Y: c.Center.Y + c.Height/2.0,
@@ -119,5 +119,15 @@ func (c Cylinder3D) GetCenter() math.Point3D {
 	}
 }
 
+// AtTime returns a new cylinder interpolated to time t.
+func (c *Cylinder3D) AtTime(t float64) Shape {
+	if len(c.Motion) == 0 {
+		return c
+	}
+	newCylinder := *c
+	newCylinder.Center = c.CenterAt(t)
+	return &newCylinder
+}
+
 // IsVolumetric returns false for Cylinder3D.
-func (c Cylinder3D) IsVolumetric() bool { return false }
+func (c *Cylinder3D) IsVolumetric() bool { return false }
