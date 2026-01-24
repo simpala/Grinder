@@ -15,6 +15,7 @@ Front-to-Back Determinism: The subdivision order naturally handles occlusion, el
 Tile-Ready: The renderer is built to be "embarrassingly parallel" by dicing the screen into independent work units (Tiles).
 
 How to get started:
+
 clone the repository
 
 cd into grinder main folder
