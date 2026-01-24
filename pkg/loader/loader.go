@@ -21,11 +21,12 @@ type CameraConfig struct {
 	Far    float64      `json:"far,omitempty"`
 }
 
-//	type AtmosphereConfig struct {
-//		Type    string     `json:"type"`    // e.g., "linear_fog"
-//		Color   color.RGBA `json:"color"`   // The color of the "haze"
-//		Density float64    `json:"density"` // Strength of the effect (0.0 to 1.0)
-//	}
+type SceneConfig struct {
+	Camera     CameraConfig             `json:"camera"`
+	Light      LightConfig              `json:"light"`
+	Atmosphere shading.AtmosphereConfig `json:"atmosphere"`
+	Shapes     []ShapeConfig            `json:"shapes"`
+}
 type LightConfig struct {
 	Position  math.Point3D `json:"position"`
 	Intensity float64      `json:"intensity"`
@@ -50,12 +51,7 @@ type ShapeConfig struct {
 	SpecularColor     *color.RGBA `json:"specularColor,omitempty"`
 }
 
-type SceneConfig struct {
-	Camera     CameraConfig             `json:"camera"`
-	Light      LightConfig              `json:"light"`
-	Atmosphere shading.AtmosphereConfig `json:"atmosphere"` // Use the shared one
-	Shapes     []ShapeConfig            `json:"shapes"`
-}
+
 
 func LoadScene(filepath string) (camera.Camera, []geometry.Shape, *shading.Light, shading.AtmosphereConfig, float64, float64, error) {
 	file, err := os.ReadFile(filepath)
