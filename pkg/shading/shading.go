@@ -25,12 +25,13 @@ type Light struct {
 	Samples   int // New field
 }
 
-// isOccluded checks for shadows by marching small AABBs towards the light source.
-func isOccluded(p, lightPos math.Point3D, shapes []geometry.Shape, lightRadius float64) bool {
-	const stepSize = 0.5
+// calculateShadowAttenuation checks for shadows by marching towards the light source.
+func calculateShadowAttenuation(p, lightPos math.Point3D, shapes []geometry.Shape, lightRadius float64) float64 {
+	const stepSize = 0.25
 	vecToLight := lightPos.Sub(p)
 	distToLight := vecToLight.Length()
 	dirToLight := vecToLight.Normalize()
+	attenuation := 1.0
 
 	// March from the point towards the light.
 	for t := stepSize; t < distToLight; t += stepSize {
@@ -39,12 +40,15 @@ func isOccluded(p, lightPos math.Point3D, shapes []geometry.Shape, lightRadius f
 			if _, ok := shape.(geometry.Plane3D); ok {
 				continue
 			}
-			// Use the shape's inherent 'Contains' logic instead of a physical box
 			if shape.Contains(samplePoint) {
-				return true
+				if vol, ok := shape.(geometry.VolumetricShape); ok {
+					attenuation *= (1.0 - vol.GetDensity()*stepSize)
+				} else {
+					return 0.0 // Solid object, full occlusion
+				}
 			}
 		}
 	}
 
-	return false // The point is not in shadow.
+	return attenuation
 }
