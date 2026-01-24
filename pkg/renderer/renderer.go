@@ -208,52 +208,61 @@ func (r *Renderer) subdivide(aabb math.AABB3D, bounds ScreenBounds, pixelBuffer 
 						sx := (float64(px) + prng.NextFloat64()) / float64(r.Width)
 						sy := (float64(py) + prng.NextFloat64()) / float64(r.Height)
 
-						// Fine-grind search: find the actual surface within this depth slice
-						var closestHit SurfaceSample
-						hitFound := false
-
+						// --- Pass 1: Find closest solid object for this sample ---
+						var closestSolidHit SurfaceSample
+						solidHitFound := false
 						for _, s := range primaryShapes {
+							if s.IsVolumetric() {
+								continue
+							}
 							shapeAtT := s.AtTime(t)
-
-							if shapeAtT.IsVolumetric() {
-								interval := (aabb.Max.Z - aabb.Min.Z) / 7.0
-								for i := 0; i < 8; i++ {
-									zSample := aabb.Min.Z + (aabb.Max.Z-aabb.Min.Z)*(float64(i)/7.0)
-									worldP := camAtT.Project(sx, sy, zSample)
-									if shapeAtT.Contains(worldP, t) {
-										pixelBuffer[tileY][tileX].VolumeSamples = append(pixelBuffer[tileY][tileX].VolumeSamples, VolumeSample{
-											Shape:    shapeAtT.(geometry.VolumetricShape),
-											Interval: interval,
-											Depth:    zSample,
-											Time:     t,
-										})
-									}
+							for i := 0; i < 8; i++ {
+								zSample := aabb.Min.Z + (aabb.Max.Z-aabb.Min.Z)*(float64(i)/7.0)
+								if solidHitFound && zSample >= closestSolidHit.Depth {
+									continue
 								}
-							} else {
-								for i := 0; i < 8; i++ {
-									zSample := aabb.Min.Z + (aabb.Max.Z-aabb.Min.Z)*(float64(i)/7.0)
-
-									if hitFound && zSample >= closestHit.Depth {
-										continue
+								worldP := camAtT.Project(sx, sy, zSample)
+								if shapeAtT.Contains(worldP, t) {
+									closestSolidHit = SurfaceSample{
+										P:     worldP,
+										N:     shapeAtT.NormalAtPoint(worldP, t),
+										S:     shapeAtT,
+										Depth: zSample,
+										T:     t,
 									}
-
-									worldP := camAtT.Project(sx, sy, zSample)
-									if shapeAtT.Contains(worldP, t) {
-										closestHit = SurfaceSample{
-											P:     worldP,
-											N:     shapeAtT.NormalAtPoint(worldP, t),
-											S:     shapeAtT,
-											Depth: zSample,
-											T:     t,
-										}
-										hitFound = true
-										break // Found closest surface for this shape
-									}
+									solidHitFound = true
+									break // Found closest for this shape
 								}
 							}
 						}
-						if hitFound {
-							pixelBuffer[tileY][tileX].SurfaceSamples = append(pixelBuffer[tileY][tileX].SurfaceSamples, closestHit)
+
+						// --- Pass 2: Collect volumetric samples in front of the solid ---
+						for _, s := range primaryShapes {
+							if !s.IsVolumetric() {
+								continue
+							}
+							shapeAtT := s.AtTime(t)
+							interval := (aabb.Max.Z - aabb.Min.Z) / 7.0
+							for i := 0; i < 8; i++ {
+								zSample := aabb.Min.Z + (aabb.Max.Z-aabb.Min.Z)*(float64(i)/7.0)
+								if solidHitFound && zSample >= closestSolidHit.Depth {
+									continue // Cull volume samples behind solid objects
+								}
+								worldP := camAtT.Project(sx, sy, zSample)
+								if shapeAtT.Contains(worldP, t) {
+									pixelBuffer[tileY][tileX].VolumeSamples = append(pixelBuffer[tileY][tileX].VolumeSamples, VolumeSample{
+										Shape:    shapeAtT.(geometry.VolumetricShape),
+										Interval: interval,
+										Depth:    zSample,
+										Time:     t,
+									})
+								}
+							}
+						}
+
+						// --- Pass 3: Append the final solid hit ---
+						if solidHitFound {
+							pixelBuffer[tileY][tileX].SurfaceSamples = append(pixelBuffer[tileY][tileX].SurfaceSamples, closestSolidHit)
 						}
 					}
 				}
