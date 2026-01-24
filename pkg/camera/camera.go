@@ -9,23 +9,31 @@ import (
 type Camera interface {
 	Project(sx, sy, z float64) math.Point3D
 	GetEye() math.Point3D
+	GetShutterOpen() float64
+	GetShutterClose() float64
 }
 
 // PerspectiveCamera represents a camera with perspective projection.
 type PerspectiveCamera struct {
 	Position, Forward, Right, Up math.Point3D
 	FovScale, Aspect             float64
+	ShutterOpen, ShutterClose    float64
 }
 
 // NewLookAtCamera creates a new camera that looks at a target from a given position.
-func NewLookAtCamera(pos, target, up math.Point3D, fov, aspect float64) *PerspectiveCamera {
+func NewLookAtCamera(pos, target, up math.Point3D, fov, aspect, shutterOpen, shutterClose float64) *PerspectiveCamera {
 	f := target.Sub(pos).Normalize()
 	r := f.Cross(up).Normalize()
 	u := r.Cross(f)
 	return &PerspectiveCamera{
-		Position: pos, Forward: f, Right: r, Up: u,
-		FovScale: gomath.Tan(fov * 0.5 * gomath.Pi / 180.0),
-		Aspect:   aspect,
+		Position:     pos,
+		Forward:      f,
+		Right:        r,
+		Up:           u,
+		FovScale:     gomath.Tan(fov * 0.5 * gomath.Pi / 180.0),
+		Aspect:       aspect,
+		ShutterOpen:  shutterOpen,
+		ShutterClose: shutterClose,
 	}
 }
 
@@ -43,4 +51,14 @@ func (c *PerspectiveCamera) Project(sx, sy, z float64) math.Point3D {
 // GetEye returns the position of the camera.
 func (c *PerspectiveCamera) GetEye() math.Point3D {
 	return c.Position
+}
+
+// GetShutterOpen returns the shutter open time of the camera.
+func (c *PerspectiveCamera) GetShutterOpen() float64 {
+	return c.ShutterOpen
+}
+
+// GetShutterClose returns the shutter close time of the camera.
+func (c *PerspectiveCamera) GetShutterClose() float64 {
+	return c.ShutterClose
 }

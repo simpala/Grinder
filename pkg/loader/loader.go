@@ -6,26 +6,30 @@ import (
 	"grinder/pkg/camera"
 	"grinder/pkg/geometry"
 	"grinder/pkg/math"
+	"grinder/pkg/motion"
 	"grinder/pkg/shading"
 	"image/color"
 	"os"
 )
 
 type CameraConfig struct {
-	Eye    math.Point3D `json:"eye"`
-	Target math.Point3D `json:"target"`
-	Up     math.Point3D `json:"up"`
-	Fov    float64      `json:"fov"`
-	Aspect float64      `json:"aspect"`
-	Near   float64      `json:"near,omitempty"`
-	Far    float64      `json:"far,omitempty"`
+	Eye          math.Point3D `json:"eye"`
+	Target       math.Point3D `json:"target"`
+	Up           math.Point3D `json:"up"`
+	Fov          float64      `json:"fov"`
+	Aspect       float64      `json:"aspect"`
+	Near         float64      `json:"near,omitempty"`
+	Far          float64      `json:"far,omitempty"`
+	ShutterOpen  float64      `json:"shutter_open,omitempty"`
+	ShutterClose float64      `json:"shutter_close,omitempty"`
 }
 
 type SceneConfig struct {
-	Camera     CameraConfig             `json:"camera"`
-	Light      LightConfig              `json:"light"`
-	Atmosphere shading.AtmosphereConfig `json:"atmosphere"`
-	Shapes     []ShapeConfig            `json:"shapes"`
+	Camera            CameraConfig             `json:"camera"`
+	Light             LightConfig              `json:"light"`
+	Atmosphere        shading.AtmosphereConfig `json:"atmosphere"`
+	Shapes            []ShapeConfig            `json:"shapes"`
+	MotionBlurSamples int                      `json:"motion_blur_samples,omitempty"`
 }
 type LightConfig struct {
 	Position  math.Point3D `json:"position"`
@@ -35,30 +39,31 @@ type LightConfig struct {
 }
 
 type ShapeConfig struct {
-	Type              string        `json:"type"`
-	Center            math.Point3D  `json:"center,omitempty"`
-	Radius            float64       `json:"radius,omitempty"`
-	Point             math.Point3D  `json:"point,omitempty"`
-	Normal            math.Normal3D `json:"normal,omitempty"`
-	Min               math.Point3D  `json:"min,omitempty"`
-	Max               math.Point3D  `json:"max,omitempty"`
-	Height            float64       `json:"height,omitempty"`
-	Density           float64       `json:"density,omitempty"`
-	Color             color.RGBA    `json:"color"`
-	Shininess         *float64      `json:"shininess,omitempty"`
-	SpecularIntensity *float64      `json:"specularIntensity,omitempty"`
-	SpecularColor     *color.RGBA   `json:"specularColor,omitempty"`
+	Type              string             `json:"type"`
+	Center            math.Point3D       `json:"center,omitempty"`
+	Radius            float64            `json:"radius,omitempty"`
+	Point             math.Point3D       `json:"point,omitempty"`
+	Normal            math.Normal3D      `json:"normal,omitempty"`
+	Min               math.Point3D       `json:"min,omitempty"`
+	Max               math.Point3D       `json:"max,omitempty"`
+	Height            float64            `json:"height,omitempty"`
+	Density           float64            `json:"density,omitempty"`
+	Color             color.RGBA         `json:"color"`
+	Shininess         *float64           `json:"shininess,omitempty"`
+	SpecularIntensity *float64           `json:"specularIntensity,omitempty"`
+	SpecularColor     *color.RGBA        `json:"specularColor,omitempty"`
+	Motion            []motion.Keyframe `json:"motion,omitempty"`
 }
 
-func LoadScene(filepath string) (camera.Camera, []geometry.Shape, *shading.Light, shading.AtmosphereConfig, float64, float64, error) {
+func LoadScene(filepath string) (camera.Camera, []geometry.Shape, *shading.Light, shading.AtmosphereConfig, float64, float64, int, error) {
 	file, err := os.ReadFile(filepath)
 	if err != nil {
-		return nil, nil, nil, shading.AtmosphereConfig{}, 0, 0, fmt.Errorf("failed to read scene file: %w", err)
+		return nil, nil, nil, shading.AtmosphereConfig{}, 0, 0, 0, fmt.Errorf("failed to read scene file: %w", err)
 	}
 
 	var config SceneConfig
 	if err := json.Unmarshal(file, &config); err != nil {
-		return nil, nil, nil, shading.AtmosphereConfig{}, 0, 0, fmt.Errorf("failed to parse scene file: %w", err)
+		return nil, nil, nil, shading.AtmosphereConfig{}, 0, 0, 0, fmt.Errorf("failed to parse scene file: %w", err)
 	}
 
 	cam := camera.NewLookAtCamera(
@@ -67,6 +72,8 @@ func LoadScene(filepath string) (camera.Camera, []geometry.Shape, *shading.Light
 		config.Camera.Up,
 		config.Camera.Fov,
 		config.Camera.Aspect,
+		config.Camera.ShutterOpen,
+		config.Camera.ShutterClose,
 	)
 
 	samples := config.Light.Samples
@@ -100,35 +107,38 @@ func LoadScene(filepath string) (camera.Camera, []geometry.Shape, *shading.Light
 
 		switch shapeConfig.Type {
 		case "sphere":
-			shapes = append(shapes, geometry.Sphere3D{
+			shapes = append(shapes, &geometry.Sphere3D{
 				Center:            shapeConfig.Center,
 				Radius:            shapeConfig.Radius,
 				Color:             shapeConfig.Color,
 				Shininess:         shininess,
 				SpecularIntensity: specularIntensity,
 				SpecularColor:     specularColor,
+				Motion:            shapeConfig.Motion,
 			})
 		case "plane":
-			shapes = append(shapes, geometry.Plane3D{
+			shapes = append(shapes, &geometry.Plane3D{
 				Point:             shapeConfig.Point,
 				Normal:            shapeConfig.Normal,
 				Color:             shapeConfig.Color,
 				Shininess:         shininess,
 				SpecularIntensity: specularIntensity,
 				SpecularColor:     specularColor,
+				Motion:            shapeConfig.Motion,
 			})
 		case "box":
-			shapes = append(shapes, geometry.Box3D{
+			shapes = append(shapes, &geometry.Box3D{
 				Min:               shapeConfig.Min,
 				Max:               shapeConfig.Max,
 				Color:             shapeConfig.Color,
 				Shininess:         shininess,
 				SpecularIntensity: specularIntensity,
 				SpecularColor:     specularColor,
+				Motion:            shapeConfig.Motion,
 			})
 
 		case "cylinder":
-			shapes = append(shapes, geometry.Cylinder3D{
+			shapes = append(shapes, &geometry.Cylinder3D{
 				Center:            shapeConfig.Center, // Base center
 				Radius:            shapeConfig.Radius,
 				Height:            shapeConfig.Height,
@@ -136,9 +146,10 @@ func LoadScene(filepath string) (camera.Camera, []geometry.Shape, *shading.Light
 				Shininess:         shininess,
 				SpecularIntensity: specularIntensity,
 				SpecularColor:     specularColor,
+				Motion:            shapeConfig.Motion,
 			})
 		case "cone":
-			shapes = append(shapes, geometry.Cone3D{
+			shapes = append(shapes, &geometry.Cone3D{
 				Center:            shapeConfig.Center,
 				Radius:            shapeConfig.Radius,
 				Height:            shapeConfig.Height,
@@ -146,9 +157,10 @@ func LoadScene(filepath string) (camera.Camera, []geometry.Shape, *shading.Light
 				Shininess:         shininess,
 				SpecularIntensity: specularIntensity,
 				SpecularColor:     specularColor,
+				Motion:            shapeConfig.Motion,
 			})
 		case "volume_box":
-			shapes = append(shapes, geometry.VolumeBox{
+			shapes = append(shapes, &geometry.VolumeBox{
 				Min:               shapeConfig.Min,
 				Max:               shapeConfig.Max,
 				Color:             shapeConfig.Color,
@@ -156,11 +168,12 @@ func LoadScene(filepath string) (camera.Camera, []geometry.Shape, *shading.Light
 				SpecularIntensity: specularIntensity,
 				SpecularColor:     specularColor,
 				Density:           shapeConfig.Density,
+				Motion:            shapeConfig.Motion,
 			})
 		default:
-			return nil, nil, nil, shading.AtmosphereConfig{}, 0, 0, fmt.Errorf("unknown shape type: %s", shapeConfig.Type)
+			return nil, nil, nil, shading.AtmosphereConfig{}, 0, 0, 0, fmt.Errorf("unknown shape type: %s", shapeConfig.Type)
 		}
 	}
 
-	return cam, shapes, light, config.Atmosphere, config.Camera.Near, config.Camera.Far, nil
+	return cam, shapes, light, config.Atmosphere, config.Camera.Near, config.Camera.Far, config.MotionBlurSamples, nil
 }

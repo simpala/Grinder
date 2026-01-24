@@ -6,6 +6,8 @@ import (
 	gomath "math"
 )
 
+import "grinder/pkg/motion"
+
 // Sphere3D represents a sphere in 3D space.
 type Sphere3D struct {
 	Center            math.Point3D
@@ -14,6 +16,7 @@ type Sphere3D struct {
 	Shininess         float64
 	SpecularIntensity float64
 	SpecularColor     color.RGBA
+	Motion            []motion.Keyframe
 }
 
 // Contains checks if a point is inside the sphere.
@@ -67,3 +70,12 @@ func (s Sphere3D) GetCenter() math.Point3D {
 
 // IsVolumetric returns false for Sphere3D.
 func (s Sphere3D) IsVolumetric() bool { return false }
+
+func (s *Sphere3D) AtTime(t float64) Shape {
+	if len(s.Motion) == 0 {
+		return s
+	}
+	newSphere := *s
+	newSphere.Center = motion.Interpolate(s.Motion, t)
+	return &newSphere
+}

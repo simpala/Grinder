@@ -17,6 +17,7 @@ type Shape interface {
 	GetAABB() math.AABB3D
 	GetCenter() math.Point3D
 	IsVolumetric() bool
+	AtTime(t float64) Shape
 }
 
 // VolumetricShape defines the interface for all volumetric objects in the scene.

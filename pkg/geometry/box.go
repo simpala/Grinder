@@ -6,6 +6,8 @@ import (
 	gomath "math"
 )
 
+import "grinder/pkg/motion"
+
 // Box3D represents a solid box (AABB) in 3D space.
 type Box3D struct {
 	Min, Max          math.Point3D
@@ -13,6 +15,7 @@ type Box3D struct {
 	Shininess         float64
 	SpecularIntensity float64
 	SpecularColor     color.RGBA
+	Motion            []motion.Keyframe
 }
 
 func (b Box3D) Contains(p math.Point3D) bool {
@@ -70,3 +73,15 @@ func (b Box3D) GetCenter() math.Point3D {
 
 // IsVolumetric returns false for Box3D.
 func (b Box3D) IsVolumetric() bool { return false }
+
+func (b *Box3D) AtTime(t float64) Shape {
+	if len(b.Motion) == 0 {
+		return b
+	}
+	newBox := *b
+	size := b.Max.Sub(b.Min)
+	newCenter := motion.Interpolate(b.Motion, t)
+	newBox.Min = newCenter.Sub(size.Mul(0.5))
+	newBox.Max = newCenter.Add(size.Mul(0.5))
+	return &newBox
+}

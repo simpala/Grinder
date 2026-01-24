@@ -6,6 +6,8 @@ import (
 	gomath "math"
 )
 
+import "grinder/pkg/motion"
+
 // VolumeBox represents a volumetric box in 3D space.
 type VolumeBox struct {
 	Min, Max          math.Point3D
@@ -14,6 +16,7 @@ type VolumeBox struct {
 	SpecularIntensity float64
 	SpecularColor     color.RGBA
 	Density           float64
+	Motion            []motion.Keyframe
 }
 
 func (b VolumeBox) Contains(p math.Point3D) bool {
@@ -74,3 +77,15 @@ func (b VolumeBox) IsVolumetric() bool { return true }
 
 // GetDensity returns the density of the volume.
 func (b VolumeBox) GetDensity() float64 { return b.Density }
+
+func (b *VolumeBox) AtTime(t float64) Shape {
+	if len(b.Motion) == 0 {
+		return b
+	}
+	newBox := *b
+	size := b.Max.Sub(b.Min)
+	newCenter := motion.Interpolate(b.Motion, t)
+	newBox.Min = newCenter.Sub(size.Mul(0.5))
+	newBox.Max = newCenter.Add(size.Mul(0.5))
+	return &newBox
+}

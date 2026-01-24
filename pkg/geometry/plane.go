@@ -6,6 +6,8 @@ import (
 	gomath "math"
 )
 
+import "grinder/pkg/motion"
+
 // Plane3D represents an infinite plane in 3D space.
 type Plane3D struct {
 	Point             math.Point3D
@@ -14,6 +16,7 @@ type Plane3D struct {
 	Shininess         float64
 	SpecularIntensity float64
 	SpecularColor     color.RGBA
+	Motion            []motion.Keyframe
 }
 
 // Contains checks if a point is "under" the plane (in the direction opposite the normal).
@@ -81,3 +84,12 @@ func (pl Plane3D) GetCenter() math.Point3D {
 
 // IsVolumetric returns false for Plane3D.
 func (pl Plane3D) IsVolumetric() bool { return false }
+
+func (pl *Plane3D) AtTime(t float64) Shape {
+	if len(pl.Motion) == 0 {
+		return pl
+	}
+	newPlane := *pl
+	newPlane.Point = motion.Interpolate(pl.Motion, t)
+	return &newPlane
+}

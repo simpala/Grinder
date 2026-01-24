@@ -6,6 +6,8 @@ import (
 	gomath "math"
 )
 
+import "grinder/pkg/motion"
+
 // Cylinder3D represents a cylinder in 3D space.
 type Cylinder3D struct {
 	Center            math.Point3D // Center of the base
@@ -14,6 +16,7 @@ type Cylinder3D struct {
 	Shininess         float64
 	SpecularIntensity float64
 	SpecularColor     color.RGBA
+	Motion            []motion.Keyframe
 }
 
 func (c Cylinder3D) Contains(p math.Point3D) bool {
@@ -89,3 +92,12 @@ func (c Cylinder3D) GetCenter() math.Point3D {
 
 // IsVolumetric returns false for Cylinder3D.
 func (c Cylinder3D) IsVolumetric() bool { return false }
+
+func (c *Cylinder3D) AtTime(t float64) Shape {
+	if len(c.Motion) == 0 {
+		return c
+	}
+	newCylinder := *c
+	newCylinder.Center = motion.Interpolate(c.Motion, t)
+	return &newCylinder
+}

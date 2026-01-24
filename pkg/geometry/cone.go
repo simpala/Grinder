@@ -2,6 +2,7 @@ package geometry
 
 import (
 	"grinder/pkg/math"
+	"grinder/pkg/motion"
 	"image/color"
 	gomath "math"
 )
@@ -15,6 +16,7 @@ type Cone3D struct {
 	Shininess         float64
 	SpecularIntensity float64
 	SpecularColor     color.RGBA
+	Motion            []motion.Keyframe
 }
 
 func (c Cone3D) Contains(p math.Point3D) bool {
@@ -105,3 +107,12 @@ func (c Cone3D) GetCenter() math.Point3D {
 
 // IsVolumetric returns false for Cone3D.
 func (c Cone3D) IsVolumetric() bool { return false }
+
+func (c *Cone3D) AtTime(t float64) Shape {
+	if len(c.Motion) == 0 {
+		return c
+	}
+	newCone := *c
+	newCone.Center = motion.Interpolate(c.Motion, t)
+	return &newCone
+}
