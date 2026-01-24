@@ -136,7 +136,9 @@ func (r *Renderer) Render(bounds ScreenBounds) *image.RGBA {
 		for x := 0; x < tileWidth; x++ {
 			surface := surfaceBuffer[y][x]
 
+			// 1. Background (Void) Handling
 			if !surface.Hit {
+				// Apply atmosphere to the background color at maximum distance
 				img.Set(x, y, shading.ApplyAtmosphere(r.bgColor, r.Far, r.Atmosphere))
 				continue
 			}
@@ -147,12 +149,12 @@ func (r *Renderer) Render(bounds ScreenBounds) *image.RGBA {
 				gridSize = 1
 			}
 			totalSamples := float64(gridSize * gridSize)
-			// Calculate light orientation ONCE per pixel to save CPU
+
+			// Light orientation math (calculated once per pixel)
 			pixelCenterP := r.Camera.Project(float64(bounds.MinX+x)/float64(r.Width), float64(bounds.MinY+y)/float64(r.Height), surface.Depth)
 			lightVec := r.Light.Position.Sub(pixelCenterP)
 			lightDir := lightVec.Normalize()
 
-			// Standard 'LookAt' math to find vectors perpendicular to the light direction
 			var up math.Point3D
 			if gomath.Abs(lightDir.Y) < 0.9 {
 				up = math.Point3D{X: 0, Y: 1, Z: 0}
@@ -161,10 +163,10 @@ func (r *Renderer) Render(bounds ScreenBounds) *image.RGBA {
 			}
 			right := lightDir.Cross(up).Normalize()
 			vUp := lightDir.Cross(right).Normalize()
-			// Stratified Loops (Inside each pixel)
+
+			// 2. Stratified Sampling Loop (Surface Lighting Only)
 			for gy := 0; gy < gridSize; gy++ {
 				for gx := 0; gx < gridSize; gx++ {
-					// SSAA Jitter (Pixel)
 					sx := (float64(bounds.MinX+x) + prng.NextFloat64()) / float64(r.Width)
 					sy := (float64(bounds.MinY+y) + prng.NextFloat64()) / float64(r.Height)
 					worldP := r.Camera.Project(sx, sy, surface.Depth)
@@ -173,12 +175,8 @@ func (r *Renderer) Render(bounds ScreenBounds) *image.RGBA {
 					if r.Light.Radius > 0 {
 						u := (float64(gx) + prng.NextFloat64()) / float64(gridSize)
 						v := (float64(gy) + prng.NextFloat64()) / float64(gridSize)
-
-						// Offset within the light's local "facing" plane
 						offU := (u*2 - 1) * r.Light.Radius
 						offV := (v*2 - 1) * r.Light.Radius
-
-						// New Position: Original + (Right * u) + (Up * v)
 						jitteredPos := r.Light.Position.Add(right.Mul(offU)).Add(vUp.Mul(offV))
 
 						jitteredLight = shading.Light{
@@ -190,21 +188,25 @@ func (r *Renderer) Render(bounds ScreenBounds) *image.RGBA {
 						jitteredLight = r.Light
 					}
 
+					// ShadedColor now only returns the surface Phong color
 					shadedColor := shading.ShadedColor(worldP, surface.N, r.Camera.GetEye(), jitteredLight, surface.S, r.Shapes)
-					finalColor := shading.ApplyAtmosphere(shadedColor, surface.Depth, r.Atmosphere)
 
-					rTotal += float64(finalColor.R)
-					gTotal += float64(finalColor.G)
-					bTotal += float64(finalColor.B)
+					rTotal += float64(shadedColor.R)
+					gTotal += float64(shadedColor.G)
+					bTotal += float64(shadedColor.B)
 				}
 			}
 
-			img.Set(x, y, color.RGBA{
+			// 3. Average the light and apply Atmosphere ONCE per pixel
+			avgSurfaceColor := color.RGBA{
 				R: uint8(rTotal / totalSamples),
 				G: uint8(gTotal / totalSamples),
 				B: uint8(bTotal / totalSamples),
 				A: 255,
-			})
+			}
+
+			// Final Post-Process: Atmosphere
+			img.Set(x, y, shading.ApplyAtmosphere(avgSurfaceColor, surface.Depth, r.Atmosphere))
 		}
 	}
 	return img
