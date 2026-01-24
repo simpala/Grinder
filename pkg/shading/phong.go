@@ -8,7 +8,7 @@ import (
 )
 
 // ShadedColor calculates the color of a point on a surface using the Phong reflection model.
-func ShadedColor(p math.Point3D, n math.Normal3D, eye math.Point3D, l Light, shape geometry.Shape, shapes []geometry.Shape) color.RGBA {
+func ShadedColor(p math.Point3D, n math.Normal3D, eye math.Point3D, l Light, shape geometry.Shape, shapes []geometry.Shape, time float64) color.RGBA {
 	lightVec := l.Position.Sub(p)
 	lightDir := lightVec.Normalize()
 	base := shape.GetColor()
@@ -42,7 +42,7 @@ func ShadedColor(p math.Point3D, n math.Normal3D, eye math.Point3D, l Light, sha
 		}
 	}
 
-	shadowAttenuation := calculateShadowAttenuation(checkP, l.Position, occluders, l.Radius)
+	shadowAttenuation := calculateShadowAttenuation(checkP, l.Position, occluders, l.Radius, time)
 
 	// Diffuse (Lambert) component
 	dot := n.Dot(lightDir)

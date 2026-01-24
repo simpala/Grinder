@@ -24,6 +24,7 @@ type SurfaceData struct {
 	Depth         float64
 	Hit           bool
 	VolumeSamples []VolumeSample
+	Time          float64
 }
 
 // VolumeSample stores data for a single sample within a volume.
@@ -46,6 +47,7 @@ type Renderer struct {
 	Near       float64
 	Far        float64
 	Atmosphere shading.AtmosphereConfig
+	prng       *math.XorShift32
 }
 
 // NewRenderer creates a new renderer with the given configuration.
@@ -67,6 +69,7 @@ func NewRenderer(cam camera.Camera, shapes []geometry.Shape, light shading.Light
 		bgColor:    color.RGBA{30, 30, 35, 255},
 		Near:       near,
 		Far:        far,
+		prng:       math.NewXorShift32(uint32(width*height) + uint32(len(shapes))),
 	}
 }
 
@@ -170,7 +173,8 @@ func (r *Renderer) Render(bounds ScreenBounds) *image.RGBA {
 					for gx := 0; gx < gridSize; gx++ {
 						sx := (float64(bounds.MinX+x) + prng.NextFloat64()) / float64(r.Width)
 						sy := (float64(bounds.MinY+y) + prng.NextFloat64()) / float64(r.Height)
-						worldP := r.Camera.Project(sx, sy, surface.Depth)
+						camAtTime := r.Camera.AtTime(surface.Time)
+						worldP := camAtTime.Project(sx, sy, surface.Depth)
 
 						var jitteredLight shading.Light
 						if r.Light.Radius > 0 {
@@ -188,8 +192,7 @@ func (r *Renderer) Render(bounds ScreenBounds) *image.RGBA {
 						} else {
 							jitteredLight = r.Light
 						}
-
-						shadedColor := shading.ShadedColor(worldP, surface.N, r.Camera.GetEye(), jitteredLight, surface.S, r.Shapes)
+						shadedColor := shading.ShadedColor(worldP, surface.N, camAtTime.GetEye(), jitteredLight, surface.S, r.Shapes, surface.Time)
 						rTotal += float64(shadedColor.R)
 						gTotal += float64(shadedColor.G)
 						bTotal += float64(shadedColor.B)
@@ -247,6 +250,8 @@ func (r *Renderer) subdivide(aabb math.AABB3D, bounds ScreenBounds, surfaceBuffe
 				if px >= bounds.MinX && px < bounds.MaxX && py >= bounds.MinY && py < bounds.MaxY {
 					tileX, tileY := px-bounds.MinX, py-bounds.MinY
 					sx, sy := float64(px)/float64(r.Width), float64(py)/float64(r.Height)
+					time := r.prng.NextFloat64() * r.Camera.GetShutter()
+					camAtTime := r.Camera.AtTime(time)
 
 					// Fine-grind search: find the actual surface within this depth slice
 					for _, s := range primaryShapes {
@@ -254,8 +259,8 @@ func (r *Renderer) subdivide(aabb math.AABB3D, bounds ScreenBounds, surfaceBuffe
 							interval := (aabb.Max.Z - aabb.Min.Z) / 7.0
 							for i := 0; i < 8; i++ {
 								zSample := aabb.Min.Z + (aabb.Max.Z-aabb.Min.Z)*(float64(i)/7.0)
-								worldP := r.Camera.Project(sx, sy, zSample)
-								if s.Contains(worldP) {
+								worldP := camAtTime.Project(sx, sy, zSample)
+								if s.Contains(worldP, time) {
 									surfaceBuffer[tileY][tileX].VolumeSamples = append(surfaceBuffer[tileY][tileX].VolumeSamples, VolumeSample{
 										Shape:    s.(geometry.VolumetricShape),
 										Interval: interval,
@@ -273,13 +278,14 @@ func (r *Renderer) subdivide(aabb math.AABB3D, bounds ScreenBounds, surfaceBuffe
 									continue
 								}
 
-								worldP := r.Camera.Project(sx, sy, zSample)
-								if s.Contains(worldP) {
+								worldP := camAtTime.Project(sx, sy, zSample)
+								if s.Contains(worldP, time) {
 									surfaceBuffer[tileY][tileX].P = worldP
-									surfaceBuffer[tileY][tileX].N = s.NormalAtPoint(worldP)
+									surfaceBuffer[tileY][tileX].N = s.NormalAtPoint(worldP, time)
 									surfaceBuffer[tileY][tileX].S = s
 									surfaceBuffer[tileY][tileX].Depth = zSample
 									surfaceBuffer[tileY][tileX].Hit = true
+									surfaceBuffer[tileY][tileX].Time = time
 									break // Found the surface for this specific shape; move to next shape
 								}
 							}

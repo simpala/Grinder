@@ -10,19 +10,19 @@ func TestPlane3D_Contains(t *testing.T) {
 
 	// Test point "under"
 	pUnder := math.Point3D{X: 0, Y: -1, Z: 0}
-	if !plane.Contains(pUnder) {
+	if !plane.Contains(pUnder, 0.0) {
 		t.Errorf("Plane3D Contains failed: point %v should be under", pUnder)
 	}
 
 	// Test point "above"
 	pAbove := math.Point3D{X: 0, Y: 1, Z: 0}
-	if plane.Contains(pAbove) {
+	if plane.Contains(pAbove, 0.0) {
 		t.Errorf("Plane3D Contains failed: point %v should be above", pAbove)
 	}
 
 	// Test point on plane
 	pOnPlane := math.Point3D{X: 1, Y: 0, Z: 1}
-	if !plane.Contains(pOnPlane) {
+	if !plane.Contains(pOnPlane, 0.0) {
 		t.Errorf("Plane3D Contains failed: point %v should be on plane", pOnPlane)
 	}
 }

@@ -26,7 +26,7 @@ type Light struct {
 }
 
 // calculateShadowAttenuation checks for shadows by marching towards the light source.
-func calculateShadowAttenuation(p, lightPos math.Point3D, shapes []geometry.Shape, lightRadius float64) float64 {
+func calculateShadowAttenuation(p, lightPos math.Point3D, shapes []geometry.Shape, lightRadius, time float64) float64 {
 	const stepSize = 0.25
 	vecToLight := lightPos.Sub(p)
 	distToLight := vecToLight.Length()
@@ -40,7 +40,7 @@ func calculateShadowAttenuation(p, lightPos math.Point3D, shapes []geometry.Shap
 			if _, ok := shape.(geometry.Plane3D); ok {
 				continue
 			}
-			if shape.Contains(samplePoint) {
+			if shape.Contains(samplePoint, time) {
 				if vol, ok := shape.(geometry.VolumetricShape); ok {
 					attenuation *= (1.0 - vol.GetDensity()*stepSize)
 				} else {

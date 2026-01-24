@@ -16,10 +16,9 @@ type Plane3D struct {
 	SpecularColor     color.RGBA
 }
 
-// Contains checks if a point is "under" the plane (in the direction opposite the normal).
-func (pl Plane3D) Contains(p math.Point3D) bool {
+// Contains checks if a point is "under" a plane, ignoring time for static planes.
+func (pl Plane3D) Contains(p math.Point3D, t float64) bool {
 	v := p.Sub(pl.Point)
-	// Add a tiny epsilon (0.0001) to reduce sampling noise at the surface
 	return v.DotNormal(pl.Normal) <= 0.0001
 }
 
@@ -51,7 +50,7 @@ func (pl Plane3D) Intersects(aabb math.AABB3D) bool {
 }
 
 // NormalAtPoint returns the normal of the plane, which is constant.
-func (pl Plane3D) NormalAtPoint(p math.Point3D) math.Normal3D { return pl.Normal }
+func (pl Plane3D) NormalAtPoint(p math.Point3D, t float64) math.Normal3D { return pl.Normal }
 
 // GetColor returns the color of the plane.
 func (pl Plane3D) GetColor() color.RGBA { return pl.Color }

@@ -80,6 +80,11 @@ func (a Point3D) Length() float64 {
 	return math.Sqrt(a.X*a.X + a.Y*a.Y + a.Z*a.Z)
 }
 
+// Lerp performs linear interpolation between two points.
+func (a Point3D) Lerp(b Point3D, alpha float64) Point3D {
+	return a.Add(b.Sub(a).Mul(alpha))
+}
+
 // IntersectRay performs a ray-AABB intersection test using the slab method.
 // It returns tmin, tmax, and a boolean indicating if the ray intersects the box.
 func (a AABB3D) IntersectRay(r Ray) (float64, float64, bool) {

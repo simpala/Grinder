@@ -6,19 +6,22 @@ import (
 	"grinder/pkg/camera"
 	"grinder/pkg/geometry"
 	"grinder/pkg/math"
+	"grinder/pkg/motion"
 	"grinder/pkg/shading"
 	"image/color"
 	"os"
 )
 
 type CameraConfig struct {
-	Eye    math.Point3D `json:"eye"`
-	Target math.Point3D `json:"target"`
-	Up     math.Point3D `json:"up"`
-	Fov    float64      `json:"fov"`
-	Aspect float64      `json:"aspect"`
-	Near   float64      `json:"near,omitempty"`
-	Far    float64      `json:"far,omitempty"`
+	Eye     math.Point3D `json:"eye"`
+	Target  math.Point3D `json:"target"`
+	Up      math.Point3D `json:"up"`
+	Fov     float64      `json:"fov"`
+	Aspect  float64      `json:"aspect"`
+	Near    float64      `json:"near,omitempty"`
+	Far     float64      `json:"far,omitempty"`
+	Shutter float64      `json:"shutter,omitempty"`
+	Motion  []motion.Keyframe   `json:"motion,omitempty"`
 }
 
 type SceneConfig struct {
@@ -48,6 +51,7 @@ type ShapeConfig struct {
 	Shininess         *float64      `json:"shininess,omitempty"`
 	SpecularIntensity *float64      `json:"specularIntensity,omitempty"`
 	SpecularColor     *color.RGBA   `json:"specularColor,omitempty"`
+	Motion            []motion.Keyframe    `json:"motion,omitempty"`
 }
 
 func LoadScene(filepath string) (camera.Camera, []geometry.Shape, *shading.Light, shading.AtmosphereConfig, float64, float64, error) {
@@ -67,6 +71,8 @@ func LoadScene(filepath string) (camera.Camera, []geometry.Shape, *shading.Light
 		config.Camera.Up,
 		config.Camera.Fov,
 		config.Camera.Aspect,
+		config.Camera.Shutter,
+		config.Camera.Motion,
 	)
 
 	samples := config.Light.Samples
@@ -107,6 +113,7 @@ func LoadScene(filepath string) (camera.Camera, []geometry.Shape, *shading.Light
 				Shininess:         shininess,
 				SpecularIntensity: specularIntensity,
 				SpecularColor:     specularColor,
+				Motion:            shapeConfig.Motion,
 			})
 		case "plane":
 			shapes = append(shapes, geometry.Plane3D{
@@ -125,6 +132,7 @@ func LoadScene(filepath string) (camera.Camera, []geometry.Shape, *shading.Light
 				Shininess:         shininess,
 				SpecularIntensity: specularIntensity,
 				SpecularColor:     specularColor,
+				Motion:            shapeConfig.Motion,
 			})
 
 		case "cylinder":
@@ -136,6 +144,7 @@ func LoadScene(filepath string) (camera.Camera, []geometry.Shape, *shading.Light
 				Shininess:         shininess,
 				SpecularIntensity: specularIntensity,
 				SpecularColor:     specularColor,
+				Motion:            shapeConfig.Motion,
 			})
 		case "cone":
 			shapes = append(shapes, geometry.Cone3D{
@@ -146,6 +155,7 @@ func LoadScene(filepath string) (camera.Camera, []geometry.Shape, *shading.Light
 				Shininess:         shininess,
 				SpecularIntensity: specularIntensity,
 				SpecularColor:     specularColor,
+				Motion:            shapeConfig.Motion,
 			})
 		case "volume_box":
 			shapes = append(shapes, geometry.VolumeBox{
@@ -156,6 +166,7 @@ func LoadScene(filepath string) (camera.Camera, []geometry.Shape, *shading.Light
 				SpecularIntensity: specularIntensity,
 				SpecularColor:     specularColor,
 				Density:           shapeConfig.Density,
+				Motion:            shapeConfig.Motion,
 			})
 		default:
 			return nil, nil, nil, shading.AtmosphereConfig{}, 0, 0, fmt.Errorf("unknown shape type: %s", shapeConfig.Type)

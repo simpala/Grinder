@@ -10,19 +10,19 @@ func TestSphere3D_Contains(t *testing.T) {
 
 	// Test point inside
 	pInside := math.Point3D{X: 0.5, Y: 0.5, Z: 0.5}
-	if !sphere.Contains(pInside) {
+	if !sphere.Contains(pInside, 0.0) {
 		t.Errorf("Sphere3D Contains failed: point %v should be inside", pInside)
 	}
 
 	// Test point outside
 	pOutside := math.Point3D{X: 1, Y: 1, Z: 1}
-	if sphere.Contains(pOutside) {
+	if sphere.Contains(pOutside, 0.0) {
 		t.Errorf("Sphere3D Contains failed: point %v should be outside", pOutside)
 	}
 
 	// Test point on surface
 	pOnSurface := math.Point3D{X: 1, Y: 0, Z: 0}
-	if !sphere.Contains(pOnSurface) {
+	if !sphere.Contains(pOnSurface, 0.0) {
 		t.Errorf("Sphere3D Contains failed: point %v should be inside (on surface)", pOnSurface)
 	}
 }

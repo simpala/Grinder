@@ -10,25 +10,25 @@ func TestCylinder3D_Contains(t *testing.T) {
 
 	// Test point inside
 	pInside := math.Point3D{X: 0.5, Y: 1, Z: 0.5}
-	if !cylinder.Contains(pInside) {
+	if !cylinder.Contains(pInside, 0.0) {
 		t.Errorf("Cylinder3D Contains failed: point %v should be inside", pInside)
 	}
 
 	// Test point outside radius
 	pOutsideRadius := math.Point3D{X: 1.5, Y: 1, Z: 1.5}
-	if cylinder.Contains(pOutsideRadius) {
+	if cylinder.Contains(pOutsideRadius, 0.0) {
 		t.Errorf("Cylinder3D Contains failed: point %v should be outside radius", pOutsideRadius)
 	}
 
 	// Test point outside height
 	pOutsideHeight := math.Point3D{X: 0.5, Y: 3, Z: 0.5}
-	if cylinder.Contains(pOutsideHeight) {
+	if cylinder.Contains(pOutsideHeight, 0.0) {
 		t.Errorf("Cylinder3D Contains failed: point %v should be outside height", pOutsideHeight)
 	}
 
 	// Test point on surface
 	pOnSurface := math.Point3D{X: 1, Y: 1, Z: 0}
-	if !cylinder.Contains(pOnSurface) {
+	if !cylinder.Contains(pOnSurface, 0.0) {
 		t.Errorf("Cylinder3D Contains failed: point %v should be inside (on surface)", pOnSurface)
 	}
 }
