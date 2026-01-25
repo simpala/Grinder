@@ -9,6 +9,7 @@ import (
 // Cylinder3D represents a cylinder in 3D space.
 type Cylinder3D struct {
 	Center            math.Point3D // Center of the base
+	Velocity          math.Point3D // Displacement over the shutter window
 	Height, Radius    float64
 	Color             color.RGBA
 	Shininess         float64
@@ -16,11 +17,17 @@ type Cylinder3D struct {
 	SpecularColor     color.RGBA
 }
 
-func (c Cylinder3D) Contains(p math.Point3D) bool {
-	if p.Y < c.Center.Y || p.Y > c.Center.Y+c.Height {
+// GetCenterAt calculates the position for a specific sample's time
+func (c Cylinder3D) GetCenterAt(t float64) math.Point3D {
+	return c.Center.Add(c.Velocity.Mul(t))
+}
+
+func (c Cylinder3D) Contains(p math.Point3D, t float64) bool {
+	center := c.GetCenterAt(t)
+	if p.Y < center.Y || p.Y > center.Y+c.Height {
 		return false
 	}
-	dx, dz := p.X-c.Center.X, p.Z-c.Center.Z
+	dx, dz := p.X-center.X, p.Z-center.Z
 	return (dx*dx + dz*dz) <= c.Radius*c.Radius
 }
 
@@ -38,15 +45,16 @@ func (c Cylinder3D) Intersects(aabb math.AABB3D) bool {
 	return (dx*dx + dz*dz) <= c.Radius*c.Radius
 }
 
-func (c Cylinder3D) NormalAtPoint(p math.Point3D) math.Normal3D {
+func (c Cylinder3D) NormalAtPoint(p math.Point3D, t float64) math.Normal3D {
+	center := c.GetCenterAt(t)
 	eps := 0.0001
-	if p.Y >= c.Center.Y+c.Height-eps {
+	if p.Y >= center.Y+c.Height-eps {
 		return math.Normal3D{X: 0, Y: 1, Z: 0}
 	}
-	if p.Y <= c.Center.Y+eps {
+	if p.Y <= center.Y+eps {
 		return math.Normal3D{X: 0, Y: -1, Z: 0}
 	}
-	n := math.Point3D{X: p.X - c.Center.X, Y: 0, Z: p.Z - c.Center.Z}.Normalize()
+	n := math.Point3D{X: p.X - center.X, Y: 0, Z: p.Z - center.Z}.Normalize()
 	return math.Normal3D{X: n.X, Y: 0, Z: n.Z}
 }
 
@@ -64,18 +72,20 @@ func (s Cylinder3D) GetSpecularColor() color.RGBA { return s.SpecularColor }
 
 // GetAABB returns the bounding box of the cylinder.
 func (c Cylinder3D) GetAABB() math.AABB3D {
-	return math.AABB3D{
-		Min: math.Point3D{
-			X: c.Center.X - c.Radius,
-			Y: c.Center.Y,
-			Z: c.Center.Z - c.Radius,
-		},
-		Max: math.Point3D{
-			X: c.Center.X + c.Radius,
-			Y: c.Center.Y + c.Height,
-			Z: c.Center.Z + c.Radius,
-		},
+	startCenter := c.GetCenterAt(0)
+	endCenter := c.GetCenterAt(1)
+
+	minP := math.Point3D{
+		X: gomath.Min(startCenter.X, endCenter.X) - c.Radius,
+		Y: gomath.Min(startCenter.Y, endCenter.Y),
+		Z: gomath.Min(startCenter.Z, endCenter.Z) - c.Radius,
 	}
+	maxP := math.Point3D{
+		X: gomath.Max(startCenter.X, endCenter.X) + c.Radius,
+		Y: gomath.Max(startCenter.Y, endCenter.Y) + c.Height,
+		Z: gomath.Max(startCenter.Z, endCenter.Z) + c.Radius,
+	}
+	return math.AABB3D{Min: minP, Max: maxP}
 }
 
 // GetCenter returns the geometric center of the cylinder.
