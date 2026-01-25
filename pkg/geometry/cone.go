@@ -9,6 +9,7 @@ import (
 // Cone3D represents a cone in 3D space.
 type Cone3D struct {
 	Center            math.Point3D // Center of the circular base
+	Velocity          math.Point3D // Displacement over the shutter window
 	Radius            float64
 	Height            float64
 	Color             color.RGBA
@@ -17,18 +18,24 @@ type Cone3D struct {
 	SpecularColor     color.RGBA
 }
 
-func (c Cone3D) Contains(p math.Point3D) bool {
+// GetCenterAt calculates the position for a specific sample's time
+func (c Cone3D) GetCenterAt(t float64) math.Point3D {
+	return c.Center.Add(c.Velocity.Mul(t))
+}
+
+func (c Cone3D) Contains(p math.Point3D, t float64) bool {
+	center := c.GetCenterAt(t)
 	// Check height bounds
-	if p.Y < c.Center.Y || p.Y > c.Center.Y+c.Height {
+	if p.Y < center.Y || p.Y > center.Y+c.Height {
 		return false
 	}
 
 	// Calculate relative height (0 at base, 1 at tip)
-	hRatio := (p.Y - c.Center.Y) / c.Height
+	hRatio := (p.Y - center.Y) / c.Height
 	// Radius at this specific height
 	currentRadius := c.Radius * (1.0 - hRatio)
 
-	dx, dz := p.X-c.Center.X, p.Z-c.Center.Z
+	dx, dz := p.X-center.X, p.Z-center.Z
 	return (dx*dx + dz*dz) <= currentRadius*currentRadius
 }
 
@@ -58,15 +65,16 @@ func (c Cone3D) Intersects(aabb math.AABB3D) bool {
 	return (dx*dx + dz*dz) <= currentRadius*currentRadius
 }
 
-func (c Cone3D) NormalAtPoint(p math.Point3D) math.Normal3D {
+func (c Cone3D) NormalAtPoint(p math.Point3D, t float64) math.Normal3D {
+	center := c.GetCenterAt(t)
 	eps := 0.0001
 	// Bottom cap
-	if p.Y <= c.Center.Y+eps {
+	if p.Y <= center.Y+eps {
 		return math.Normal3D{X: 0, Y: -1, Z: 0}
 	}
 
 	// Side normal: Slanted outward and slightly upward
-	dx, dz := p.X-c.Center.X, p.Z-c.Center.Z
+	dx, dz := p.X-center.X, p.Z-center.Z
 	horizontalDist := gomath.Sqrt(dx*dx + dz*dz)
 
 	// The slope of the cone side
@@ -76,10 +84,20 @@ func (c Cone3D) NormalAtPoint(p math.Point3D) math.Normal3D {
 }
 
 func (c Cone3D) GetAABB() math.AABB3D {
-	return math.AABB3D{
-		Min: math.Point3D{X: c.Center.X - c.Radius, Y: c.Center.Y, Z: c.Center.Z - c.Radius},
-		Max: math.Point3D{X: c.Center.X + c.Radius, Y: c.Center.Y + c.Height, Z: c.Center.Z + c.Radius},
+	startCenter := c.GetCenterAt(0)
+	endCenter := c.GetCenterAt(1)
+
+	minP := math.Point3D{
+		X: gomath.Min(startCenter.X, endCenter.X) - c.Radius,
+		Y: gomath.Min(startCenter.Y, endCenter.Y),
+		Z: gomath.Min(startCenter.Z, endCenter.Z) - c.Radius,
 	}
+	maxP := math.Point3D{
+		X: gomath.Max(startCenter.X, endCenter.X) + c.Radius,
+		Y: gomath.Max(startCenter.Y, endCenter.Y) + c.Height,
+		Z: gomath.Max(startCenter.Z, endCenter.Z) + c.Radius,
+	}
+	return math.AABB3D{Min: minP, Max: maxP}
 }
 
 // GetColor returns the color of the cone.
