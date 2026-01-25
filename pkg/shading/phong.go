@@ -8,16 +8,18 @@ import (
 )
 
 // ShadedColor calculates the color of a point on a surface using the Phong reflection model.
-func ShadedColor(p math.Point3D, n math.Normal3D, eye math.Point3D, l Light, shape geometry.Shape, shapes []geometry.Shape) color.RGBA {
+func ShadedColor(p math.Point3D, n math.Normal3D, eye math.Point3D, l Light, shape geometry.Shape, shapes []geometry.Shape, tSample float64) color.RGBA {
 	lightVec := l.Position.Sub(p)
 	lightDir := lightVec.Normalize()
 	base := shape.GetColor()
 
 	// Shadow Check
-	shadowBias := 1e-4 // Small epsilon to prevent self-shadowing ("shadow acne")
+	// Shadow Check
+	shadowBias := 1e-4
 	checkP := math.Point3D{X: p.X + n.X*shadowBias, Y: p.Y + n.Y*shadowBias, Z: p.Z + n.Z*shadowBias}
 
-	// Shadow Culling: Create a bounding box from the surface point to the light
+	// Shadow Culling: Since GetAABB() now returns the full Motion Block,
+	// it will correctly find shapes that *might* cross the light path at ANY time.
 	cullAABB := math.AABB3D{
 		Min: math.Point3D{
 			X: gomath.Min(checkP.X, l.Position.X-l.Radius),
@@ -33,17 +35,17 @@ func ShadedColor(p math.Point3D, n math.Normal3D, eye math.Point3D, l Light, sha
 
 	// Filter shapes to only those that could possibly cast a shadow.
 	occluders := make([]geometry.Shape, 0)
+	//occluders := shapes
 	for _, s := range shapes {
 		if s == shape {
-			continue // Don't check self
+			continue
 		}
 		if s.GetAABB().Intersects(cullAABB) {
 			occluders = append(occluders, s)
 		}
 	}
 
-	shadowAttenuation := calculateShadowAttenuation(checkP, l.Position, occluders, l.Radius)
-
+	shadowAttenuation := calculateShadowAttenuation(checkP, l.Position, occluders, l.Radius, tSample)
 	// Diffuse (Lambert) component
 	dot := n.Dot(lightDir)
 	diffuseFactor := gomath.Max(0.15, dot*l.Intensity*shadowAttenuation) // Ambient term is 0.15
