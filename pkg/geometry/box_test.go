@@ -10,19 +10,19 @@ func TestBox3D_Contains(t *testing.T) {
 
 	// Test point inside
 	pInside := math.Point3D{X: 0, Y: 0, Z: 0}
-	if !box.Contains(pInside) {
+	if !box.Contains(pInside, 0.0) {
 		t.Errorf("Box3D Contains failed: point %v should be inside", pInside)
 	}
 
 	// Test point outside
 	pOutside := math.Point3D{X: 2, Y: 2, Z: 2}
-	if box.Contains(pOutside) {
+	if box.Contains(pOutside, 0.0) {
 		t.Errorf("Box3D Contains failed: point %v should be outside", pOutside)
 	}
 
 	// Test point on surface
 	pOnSurface := math.Point3D{X: 1, Y: 0, Z: 0}
-	if !box.Contains(pOnSurface) {
+	if !box.Contains(pOnSurface, 0.0) {
 		t.Errorf("Box3D Contains failed: point %v should be inside (on surface)", pOnSurface)
 	}
 }
