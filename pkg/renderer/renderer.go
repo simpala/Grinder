@@ -18,55 +18,57 @@ type ScreenBounds struct {
 
 // SurfaceData stores the essential geometry info for a final pixel.
 type SurfaceData struct {
-	P             math.Point3D
-	N             math.Normal3D
+	P, N          math.Point3D
 	S             geometry.Shape
 	Depth         float64
 	Hit           bool
-	VolumeSamples []VolumeSample
-}
-
-// VolumeSample stores data for a single sample within a volume.
-type VolumeSample struct {
-	Shape    geometry.VolumetricShape
-	Interval float64 // The length of the ray segment within the volume
-	Depth    float64 // The z-depth of the sample
+	rgba          [4]float64 // Accumulator for R, G, B, and sample count
+	volInterval   float64    // Total interval length for volumetric samples
+	volDensity    float64    // Accumulated density for volumetric samples
+	volColor      color.RGBA // Accumulated color for volumetric samples
+	time          float64    // The time at which the sample was taken
+	VolumeSamples int        // Number of volume samples accumulated
 }
 
 // Renderer is a configurable rendering engine.
 // Culling/early out is being held off until later when we have more features as its very tricky to get right and breaks with new feature additions.
 type Renderer struct {
-	Camera     camera.Camera
-	Shapes     []geometry.Shape
-	Light      shading.Light
-	Width      int
-	Height     int
-	MinSize    float64
-	bgColor    color.RGBA
-	Near       float64
-	Far        float64
-	Atmosphere shading.AtmosphereConfig
+	Camera            camera.Camera
+	Shapes            []geometry.Shape
+	Light             shading.Light
+	Width             int
+	Height            int
+	MinSize           float64
+	bgColor           color.RGBA
+	Near              float64
+	Far               float64
+	Atmosphere        shading.AtmosphereConfig
+	MotionBlurSamples int
 }
 
 // NewRenderer creates a new renderer with the given configuration.
-func NewRenderer(cam camera.Camera, shapes []geometry.Shape, light shading.Light, width, height int, minSize, near, far float64, atmos shading.AtmosphereConfig) *Renderer {
+func NewRenderer(cam camera.Camera, shapes []geometry.Shape, light shading.Light, width, height int, minSize, near, far float64, atmos shading.AtmosphereConfig, motionBlurSamples int) *Renderer {
 	if near == 0 {
 		near = 0.1
 	}
 	if far == 0 {
 		far = 50.0
 	}
+	if motionBlurSamples == 0 {
+		motionBlurSamples = 1
+	}
 	return &Renderer{
-		Camera:     cam,
-		Atmosphere: atmos,
-		Shapes:     shapes,
-		Light:      light,
-		Width:      width,
-		Height:     height,
-		MinSize:    minSize,
-		bgColor:    color.RGBA{30, 30, 35, 255},
-		Near:       near,
-		Far:        far,
+		Camera:            cam,
+		Atmosphere:        atmos,
+		Shapes:            shapes,
+		Light:             light,
+		Width:             width,
+		Height:            height,
+		MinSize:           minSize,
+		bgColor:           color.RGBA{30, 30, 35, 255},
+		Near:              near,
+		Far:               far,
+		MotionBlurSamples: motionBlurSamples,
 	}
 }
 
@@ -136,92 +138,33 @@ func (r *Renderer) Render(bounds ScreenBounds) *image.RGBA {
 
 	r.subdivide(initialAABB, bounds, surfaceBuffer, primaryShapes, r.Shapes)
 
-	// Pass 2: Shading with Stratified Light Sampling
-	prng := math.NewXorShift32(uint32(bounds.MinX*r.Width + bounds.MinY))
-
-	// Restored Pixel Loops
+	// Pass 2: Shading
 	for y := 0; y < tileHeight; y++ {
 		for x := 0; x < tileWidth; x++ {
-			surface := surfaceBuffer[y][x]
+			surface := &surfaceBuffer[y][x]
+			var finalColor color.RGBA
 
-			// 1. Determine the background color (either a solid surface or the scene background)
-			var bgColor color.RGBA
 			if surface.Hit {
-				var rTotal, gTotal, bTotal float64
-				gridSize := int(gomath.Sqrt(float64(r.Light.Samples)))
-				if gridSize < 1 {
-					gridSize = 1
-				}
-				totalSamples := float64(gridSize * gridSize)
-
-				lightVec := r.Light.Position.Sub(surface.P)
-				lightDir := lightVec.Normalize()
-
-				var up math.Point3D
-				if gomath.Abs(lightDir.Y) < 0.9 {
-					up = math.Point3D{X: 0, Y: 1, Z: 0}
-				} else {
-					up = math.Point3D{X: 1, Y: 0, Z: 0}
-				}
-				right := lightDir.Cross(up).Normalize()
-				vUp := lightDir.Cross(right).Normalize()
-
-				for gy := 0; gy < gridSize; gy++ {
-					for gx := 0; gx < gridSize; gx++ {
-						sx := (float64(bounds.MinX+x) + prng.NextFloat64()) / float64(r.Width)
-						sy := (float64(bounds.MinY+y) + prng.NextFloat64()) / float64(r.Height)
-						worldP := r.Camera.Project(sx, sy, surface.Depth)
-
-						var jitteredLight shading.Light
-						if r.Light.Radius > 0 {
-							u := (float64(gx) + prng.NextFloat64()) / float64(gridSize)
-							v := (float64(gy) + prng.NextFloat64()) / float64(gridSize)
-							offU := (u*2 - 1) * r.Light.Radius
-							offV := (v*2 - 1) * r.Light.Radius
-							jitteredPos := r.Light.Position.Add(right.Mul(offU)).Add(vUp.Mul(offV))
-
-							jitteredLight = shading.Light{
-								Position:  jitteredPos,
-								Intensity: r.Light.Intensity,
-								Radius:    r.Light.Radius,
-							}
-						} else {
-							jitteredLight = r.Light
-						}
-
-						shadedColor := shading.ShadedColor(worldP, surface.N, r.Camera.GetEye(), jitteredLight, surface.S, r.Shapes)
-						rTotal += float64(shadedColor.R)
-						gTotal += float64(shadedColor.G)
-						bTotal += float64(shadedColor.B)
-					}
-				}
-
-				surfaceColor := color.RGBA{
-					R: uint8(rTotal / totalSamples),
-					G: uint8(gTotal / totalSamples),
-					B: uint8(bTotal / totalSamples),
-					A: 255,
-				}
-				bgColor = shading.ApplyAtmosphere(surfaceColor, surface.Depth, r.Atmosphere)
+				avgR := surface.rgba[0] / surface.rgba[3]
+				avgG := surface.rgba[1] / surface.rgba[3]
+				avgB := surface.rgba[2] / surface.rgba[3]
+				finalColor = color.RGBA{R: uint8(avgR), G: uint8(avgG), B: uint8(avgB), A: 255}
+				finalColor = shading.ApplyAtmosphere(finalColor, surface.Depth, r.Atmosphere)
 			} else {
-				bgColor = shading.ApplyAtmosphere(r.bgColor, r.Far, r.Atmosphere)
+				finalColor = shading.ApplyAtmosphere(r.bgColor, r.Far, r.Atmosphere)
 			}
 
-			// 2. Composite Volumetric Samples
-			finalColor := bgColor
-			if len(surface.VolumeSamples) > 0 {
-				for _, sample := range surface.VolumeSamples {
-					// Only composite samples that are in front of the solid surface
-					if !surface.Hit || sample.Depth < surface.Depth {
-						volColor := sample.Shape.GetColor()
-						density := sample.Shape.GetDensity()
-						blendFactor := gomath.Min(1.0, density*sample.Interval)
-
-						finalColor.R = uint8(float64(finalColor.R)*(1-blendFactor) + float64(volColor.R)*blendFactor)
-						finalColor.G = uint8(float64(finalColor.G)*(1-blendFactor) + float64(volColor.G)*blendFactor)
-						finalColor.B = uint8(float64(finalColor.B)*(1-blendFactor) + float64(volColor.B)*blendFactor)
-					}
+			if surface.VolumeSamples > 0 {
+				avgDensity := surface.volDensity / float64(surface.VolumeSamples)
+				blendFactor := gomath.Min(1.0, avgDensity*surface.volInterval)
+				volColor := color.RGBA{
+					R: uint8(float64(surface.volColor.R) / float64(surface.VolumeSamples)),
+					G: uint8(float64(surface.volColor.G) / float64(surface.VolumeSamples)),
+					B: uint8(float64(surface.volColor.B) / float64(surface.VolumeSamples)),
 				}
+				finalColor.R = uint8(float64(finalColor.R)*(1-blendFactor) + float64(volColor.R)*blendFactor)
+				finalColor.G = uint8(float64(finalColor.G)*(1-blendFactor) + float64(volColor.G)*blendFactor)
+				finalColor.B = uint8(float64(finalColor.B)*(1-blendFactor) + float64(volColor.B)*blendFactor)
 			}
 
 			img.Set(x, y, finalColor)
@@ -242,47 +185,102 @@ func (r *Renderer) subdivide(aabb math.AABB3D, bounds ScreenBounds, surfaceBuffe
 		minX, minY := int(aabb.Min.X*float64(r.Width)), int(aabb.Min.Y*float64(r.Height))
 		maxX, maxY := int(aabb.Max.X*float64(r.Width)), int(aabb.Max.Y*float64(r.Height))
 
+		prng := math.NewXorShift32(uint32(minX*r.Width + minY))
+		shutterOpen, shutterClose := r.Camera.GetShutterOpen(), r.Camera.GetShutterClose()
+
 		for py := minY; py <= maxY; py++ {
 			for px := minX; px <= maxX; px++ {
 				if px >= bounds.MinX && px < bounds.MaxX && py >= bounds.MinY && py < bounds.MaxY {
 					tileX, tileY := px-bounds.MinX, py-bounds.MinY
-					sx, sy := float64(px)/float64(r.Width), float64(py)/float64(r.Height)
+					surface := &surfaceBuffer[tileY][tileX]
 
-					// Fine-grind search: find the actual surface within this depth slice
-					for _, s := range primaryShapes {
-						if s.IsVolumetric() {
-							interval := (aabb.Max.Z - aabb.Min.Z) / 7.0
-							for i := 0; i < 8; i++ {
-								zSample := aabb.Min.Z + (aabb.Max.Z-aabb.Min.Z)*(float64(i)/7.0)
-								worldP := r.Camera.Project(sx, sy, zSample)
-								if s.Contains(worldP) {
-									surfaceBuffer[tileY][tileX].VolumeSamples = append(surfaceBuffer[tileY][tileX].VolumeSamples, VolumeSample{
-										Shape:    s.(geometry.VolumetricShape),
-										Interval: interval,
-										Depth:    zSample,
-									})
-								}
+					for sample := 0; sample < r.MotionBlurSamples; sample++ {
+						// Jitter time for motion blur.
+						t := shutterOpen
+						if shutterClose > shutterOpen {
+							t = shutterOpen + (shutterClose-shutterOpen)*(float64(sample)+prng.NextFloat64())/float64(r.MotionBlurSamples)
+						}
+						// Jitter for anti-aliasing.
+						sx := (float64(px) + prng.NextFloat64()) / float64(r.Width)
+						sy := (float64(py) + prng.NextFloat64()) / float64(r.Height)
+
+						// Painter's algorithm for solid surfaces first
+						minDepth := 1e9
+						var closestShape geometry.Shape
+						var hitPoint math.Point3D
+
+						for _, s := range primaryShapes {
+							if s.IsVolumetric() {
+								continue
 							}
-						} else {
+							var tempShape geometry.Shape
+							switch v := s.(type) {
+							case *geometry.Sphere3D:
+								t := *v
+								tempShape = &t
+							default:
+								tempShape = v
+							}
+							s.AtTime(t, tempShape)
 							for i := 0; i < 8; i++ {
 								zSample := aabb.Min.Z + (aabb.Max.Z-aabb.Min.Z)*(float64(i)/7.0)
-
-								// The Painterly Check:
-								// If we already hit something closer, don't even bother sampling this shape.
-								if surfaceBuffer[tileY][tileX].Hit && zSample >= surfaceBuffer[tileY][tileX].Depth {
+								if zSample >= minDepth {
 									continue
 								}
-
 								worldP := r.Camera.Project(sx, sy, zSample)
-								if s.Contains(worldP) {
-									surfaceBuffer[tileY][tileX].P = worldP
-									surfaceBuffer[tileY][tileX].N = s.NormalAtPoint(worldP)
-									surfaceBuffer[tileY][tileX].S = s
-									surfaceBuffer[tileY][tileX].Depth = zSample
-									surfaceBuffer[tileY][tileX].Hit = true
-									break // Found the surface for this specific shape; move to next shape
+								if tempShape.Contains(worldP) {
+									minDepth = zSample
+									closestShape = tempShape
+									hitPoint = worldP
+									break // Found the surface for this specific shape
 								}
 							}
+						}
+						// Now handle volumetrics between camera and the solid surface
+						volInterval := (aabb.Max.Z - aabb.Min.Z) / 7.0
+						for _, s := range primaryShapes {
+							if !s.IsVolumetric() {
+								continue
+							}
+							var tempShape geometry.Shape
+							switch v := s.(type) {
+							case *geometry.VolumeBox:
+								t := *v
+								tempShape = &t
+							default:
+								tempShape = v
+							}
+							s.AtTime(t, tempShape)
+							if volShape, ok := tempShape.(geometry.VolumetricShape); ok {
+								for i := 0; i < 8; i++ {
+									zSample := aabb.Min.Z + (aabb.Max.Z-aabb.Min.Z)*(float64(i)/7.0)
+									if zSample >= minDepth {
+										continue // Don't sample volumes behind solid surfaces
+									}
+									worldP := r.Camera.Project(sx, sy, zSample)
+									if volShape.Contains(worldP) {
+										surface.volInterval += volInterval
+										surface.volDensity += volShape.GetDensity()
+										c := volShape.GetColor()
+										surface.volColor.R += c.R
+										surface.volColor.G += c.G
+										surface.volColor.B += c.B
+										surface.VolumeSamples++
+									}
+								}
+							}
+						}
+						if closestShape != nil {
+							surface.Hit = true
+							surface.Depth = (surface.Depth*surface.rgba[3] + minDepth) / (surface.rgba[3] + 1)
+							surface.time = t
+							normal := closestShape.NormalAtPoint(hitPoint)
+
+							shadedColor := shading.ShadedColor(hitPoint, math.Normal3D{X: normal.X, Y: normal.Y, Z: normal.Z}, r.Camera.GetEye(), r.Light, closestShape, fullScene, t)
+							surface.rgba[0] += float64(shadedColor.R)
+							surface.rgba[1] += float64(shadedColor.G)
+							surface.rgba[2] += float64(shadedColor.B)
+							surface.rgba[3]++
 						}
 					}
 				}

@@ -7,6 +7,7 @@ import (
 
 // Shape defines the interface for all geometric objects in the scene.
 type Shape interface {
+	AtTime(t float64, s Shape)
 	Contains(p math.Point3D) bool
 	Intersects(aabb math.AABB3D) bool
 	NormalAtPoint(p math.Point3D) math.Normal3D
