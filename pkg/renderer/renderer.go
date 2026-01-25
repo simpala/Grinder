@@ -21,6 +21,7 @@ type SurfaceData struct {
 	P             math.Point3D
 	N             math.Normal3D
 	S             geometry.Shape
+	TSample       float64 // <--- Ensure this is here!
 	Depth         float64
 	Hit           bool
 	VolumeSamples []VolumeSample
@@ -46,10 +47,11 @@ type Renderer struct {
 	Near       float64
 	Far        float64
 	Atmosphere shading.AtmosphereConfig
+	Shutter    float64 // Add this!
 }
 
 // NewRenderer creates a new renderer with the given configuration.
-func NewRenderer(cam camera.Camera, shapes []geometry.Shape, light shading.Light, width, height int, minSize, near, far float64, atmos shading.AtmosphereConfig) *Renderer {
+func NewRenderer(cam camera.Camera, shapes []geometry.Shape, light shading.Light, width, height int, minSize, near, far float64, atmos shading.AtmosphereConfig, shutter float64) *Renderer {
 	if near == 0 {
 		near = 0.1
 	}
@@ -58,6 +60,7 @@ func NewRenderer(cam camera.Camera, shapes []geometry.Shape, light shading.Light
 	}
 	return &Renderer{
 		Camera:     cam,
+		Shutter:    shutter,
 		Atmosphere: atmos,
 		Shapes:     shapes,
 		Light:      light,
@@ -189,7 +192,7 @@ func (r *Renderer) Render(bounds ScreenBounds) *image.RGBA {
 							jitteredLight = r.Light
 						}
 
-						shadedColor := shading.ShadedColor(worldP, surface.N, r.Camera.GetEye(), jitteredLight, surface.S, r.Shapes)
+						shadedColor := shading.ShadedColor(worldP, surface.N, r.Camera.GetEye(), jitteredLight, surface.S, r.Shapes, surface.TSample)
 						rTotal += float64(shadedColor.R)
 						gTotal += float64(shadedColor.G)
 						bTotal += float64(shadedColor.B)
@@ -242,20 +245,60 @@ func (r *Renderer) subdivide(aabb math.AABB3D, bounds ScreenBounds, surfaceBuffe
 		minX, minY := int(aabb.Min.X*float64(r.Width)), int(aabb.Min.Y*float64(r.Height))
 		maxX, maxY := int(aabb.Max.X*float64(r.Width)), int(aabb.Max.Y*float64(r.Height))
 
+		blockSeed := uint32(aabb.Min.X*10000 + aabb.Min.Y*1000 + aabb.Min.Z*100)
+		prng := math.NewXorShift32(blockSeed)
+
 		for py := minY; py <= maxY; py++ {
 			for px := minX; px <= maxX; px++ {
 				if px >= bounds.MinX && px < bounds.MaxX && py >= bounds.MinY && py < bounds.MaxY {
 					tileX, tileY := px-bounds.MinX, py-bounds.MinY
-					sx, sy := float64(px)/float64(r.Width), float64(py)/float64(r.Height)
+					jitterX := (prng.NextFloat64() - 0.5) / float64(r.Width)
+					jitterY := (prng.NextFloat64() - 0.5) / float64(r.Height)
+					sx, sy := (float64(px)/float64(r.Width))+jitterX, (float64(py)/float64(r.Height))+jitterY
+					interval := (aabb.Max.Z - aabb.Min.Z) / 7.0
+					// Inside the px/py loops, before you iterate over shapes:
+					pixelNoise := float64((px*127+py*431)%1000) / 1000.0
+					// Every pixel gets a consistent time sample for the whole depth stack
+					tSampleForPixel := gomath.Mod(prng.NextFloat64()+pixelNoise, 1.0) * r.Shutter
+					//sx, sy := float64(px)/float64(r.Width), float64(py)/float64(r.Height)
 
 					// Fine-grind search: find the actual surface within this depth slice
 					for _, s := range primaryShapes {
+						// Determine sample count: "The Density Drop"
+						// For motion blur, we can use fewer depth samples (e.g., 4 instead of 8)
+						// to get the speed-up you wanted, since it's blurred anyway.
+						steps := 1
+						isMoving := false
+						if sphere, ok := s.(geometry.Sphere3D); ok {
+							// Use a small epsilon to check for actual motion
+							if sphere.Velocity.Length() > 0.001 {
+								isMoving = true
+							}
+						}
+						// 3. Scale steps accordingly
+						if !isMoving {
+							// Static objects get the full 8-16 samples to prevent banding
+							steps = 8
+						} else {
+							// Moving objects use your "90% drop" strategy
+							// This is where you get the speed boost!
+							steps = 2
+						}
 						if s.IsVolumetric() {
-							interval := (aabb.Max.Z - aabb.Min.Z) / 7.0
-							for i := 0; i < 8; i++ {
-								zSample := aabb.Min.Z + (aabb.Max.Z-aabb.Min.Z)*(float64(i)/7.0)
+							// interval := (aabb.Max.Z - aabb.Min.Z) / 7.0
+							// // Inside the px/py loops, before you iterate over shapes:
+							// pixelNoise := float64((px*127+py*431)%1000) / 1000.0
+							// // Every pixel gets a consistent time sample for the whole depth stack
+							// tSampleForPixel := gomath.Mod(prng.NextFloat64()+pixelNoise, 1.0) * r.Shutter
+							for i := 0; i < steps; i++ {
+								tSample := gomath.Mod(prng.NextFloat64()+pixelNoise, 1.0) * r.Shutter
+								// Use the consistent pixel time
+								zThickness := aabb.Max.Z - aabb.Min.Z
+								zJitter := prng.NextFloat64() * (zThickness / float64(steps))
+								zSample := aabb.Min.Z + (zThickness * (float64(i) / float64(steps))) + zJitter
+
 								worldP := r.Camera.Project(sx, sy, zSample)
-								if s.Contains(worldP) {
+								if s.Contains(worldP, tSample) {
 									surfaceBuffer[tileY][tileX].VolumeSamples = append(surfaceBuffer[tileY][tileX].VolumeSamples, VolumeSample{
 										Shape:    s.(geometry.VolumetricShape),
 										Interval: interval,
@@ -264,23 +307,43 @@ func (r *Renderer) subdivide(aabb math.AABB3D, bounds ScreenBounds, surfaceBuffe
 								}
 							}
 						} else {
-							for i := 0; i < 8; i++ {
-								zSample := aabb.Min.Z + (aabb.Max.Z-aabb.Min.Z)*(float64(i)/7.0)
+							// // Inside the px/py loops, before you iterate over shapes:
+							// pixelNoise := float64((px*127+py*431)%1000) / 1000.0
+							// // Every pixel gets a consistent time sample for the whole depth stack
+							// tSampleForPixel := gomath.Mod(prng.NextFloat64()+pixelNoise, 1.0) * r.Shutter
+							for i := 0; i < steps; i++ {
+								// Use the consistent pixel time
+								zThickness := aabb.Max.Z - aabb.Min.Z
+								zJitter := prng.NextFloat64() * (zThickness / float64(steps))
+								zSample := aabb.Min.Z + (zThickness * (float64(i) / float64(steps))) + zJitter
 
-								// The Painterly Check:
-								// If we already hit something closer, don't even bother sampling this shape.
+								worldP := r.Camera.Project(sx, sy, zSample)
+								// Painterly check
 								if surfaceBuffer[tileY][tileX].Hit && zSample >= surfaceBuffer[tileY][tileX].Depth {
 									continue
 								}
 
-								worldP := r.Camera.Project(sx, sy, zSample)
-								if s.Contains(worldP) {
+								//worldP := r.Camera.Project(sx, sy, zSample)
+
+								// 2. TEMPORAL CHECK: Use the new time-aware Contains
+								if s.Contains(worldP, tSampleForPixel) {
+									// Apply thinning for moving objects
+									if isMoving && prng.NextFloat64() > 0.2 {
+										continue
+									}
+
+									// ASSIGN EVERYTHING
 									surfaceBuffer[tileY][tileX].P = worldP
-									surfaceBuffer[tileY][tileX].N = s.NormalAtPoint(worldP)
+									surfaceBuffer[tileY][tileX].N = s.NormalAtPoint(worldP, tSampleForPixel)
 									surfaceBuffer[tileY][tileX].S = s
 									surfaceBuffer[tileY][tileX].Depth = zSample
 									surfaceBuffer[tileY][tileX].Hit = true
-									break // Found the surface for this specific shape; move to next shape
+
+									// CRITICAL: Every hit (even the floor) must store the time
+									// so the shadow pass knows "when" to check for occluders.
+									surfaceBuffer[tileY][tileX].TSample = tSampleForPixel
+
+									break
 								}
 							}
 						}
