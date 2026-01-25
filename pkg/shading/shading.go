@@ -25,30 +25,35 @@ type Light struct {
 	Samples   int // New field
 }
 
-// calculateShadowAttenuation checks for shadows by marching towards the light source.
-func calculateShadowAttenuation(p, lightPos math.Point3D, shapes []geometry.Shape, lightRadius float64) float64 {
-	const stepSize = 0.25
+func calculateShadowAttenuation(p, lightPos math.Point3D, occluders []geometry.Shape, lightRadius float64, tSample float64) float64 {
+	const stepSize = 0.5 // Double the step size (0.5 instead of 0.25) for 2x speed
 	vecToLight := lightPos.Sub(p)
 	distToLight := vecToLight.Length()
 	dirToLight := vecToLight.Normalize()
 	attenuation := 1.0
 
-	// March from the point towards the light.
+	// March towards the light
 	for t := stepSize; t < distToLight; t += stepSize {
 		samplePoint := p.Add(dirToLight.Mul(t))
-		for _, shape := range shapes {
-			if _, ok := shape.(geometry.Plane3D); ok {
-				continue
-			}
-			if shape.Contains(samplePoint) {
+
+		for _, shape := range occluders {
+			// 1. TEMPORAL CHECK: This is what makes the shadow follow the sphere
+			if shape.Contains(samplePoint, tSample) {
+
+				// 2. VOLUME CHECK
 				if vol, ok := shape.(geometry.VolumetricShape); ok {
 					attenuation *= (1.0 - vol.GetDensity()*stepSize)
 				} else {
-					return 0.0 // Solid object, full occlusion
+					// 3. SOLID HIT: Return immediately
+					return 0.0
 				}
 			}
 		}
-	}
 
+		// OPTIMIZATION: If we are almost fully dark, stop marching
+		if attenuation < 0.01 {
+			return 0.0
+		}
+	}
 	return attenuation
 }
