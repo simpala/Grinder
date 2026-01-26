@@ -50,6 +50,12 @@ type ShapeConfig struct {
 	Shininess         *float64      `json:"shininess,omitempty"`
 	SpecularIntensity *float64      `json:"specularIntensity,omitempty"`
 	SpecularColor     *color.RGBA   `json:"specularColor,omitempty"`
+	P00               math.Point3D  `json:"p00,omitempty"`
+	P10               math.Point3D  `json:"p10,omitempty"`
+	P11               math.Point3D  `json:"p11,omitempty"`
+	P01               math.Point3D  `json:"p01,omitempty"`
+	Thickness         float64       `json:"thickness,omitempty"`
+	Iterations        int           `json:"iterations"`
 }
 
 // Changed return signature: added a float64 before error to hold the shutter value
@@ -170,6 +176,90 @@ func LoadScene(filepath string) (camera.Camera, []geometry.Shape, *shading.Light
 				SpecularIntensity: specularIntensity,
 				SpecularColor:     specularColor,
 			})
+		case "quad":
+			thickness := shapeConfig.Thickness
+			if thickness == 0 {
+				thickness = 0.01 // Default tiny thickness so it's not a zero-volume plane
+			}
+			shapes = append(shapes, &geometry.BilinearQuad{
+				P00:               shapeConfig.P00,
+				P10:               shapeConfig.P10,
+				P11:               shapeConfig.P11,
+				P01:               shapeConfig.P01,
+				Thickness:         thickness,
+				Color:             shapeConfig.Color,
+				Shininess:         shininess,
+				SpecularIntensity: specularIntensity,
+				SpecularColor:     specularColor,
+			})
+		case "sds_box":
+			base := geometry.CreateCubeMesh(shapeConfig.Center, shapeConfig.Radius)
+			// Subdivide
+			currentMesh := base
+			for i := 0; i < shapeConfig.Iterations; i++ { // Now we can handle 3 iterations!
+				currentMesh = currentMesh.Subdivide()
+			}
+
+			// Calculate the total AABB for the whole mesh
+			totalAABB := math.AABB3D{Min: currentMesh.Vertices[0], Max: currentMesh.Vertices[0]}
+			for _, v := range currentMesh.Vertices {
+				totalAABB = totalAABB.Expand(v)
+			}
+			// Pad for thickness
+			totalAABB.Min = totalAABB.Min.Sub(math.Point3D{X: 0.1, Y: 0.1, Z: 0.1})
+			totalAABB.Max = totalAABB.Max.Add(math.Point3D{X: 0.1, Y: 0.1, Z: 0.1})
+			// Convert faces to BilinearQuads
+			var meshQuads []*geometry.BilinearQuad
+			for _, face := range currentMesh.Faces {
+				center := shapeConfig.Center
+				// For each vertex in the face, calculate the normal pointing away from center
+
+				p00 := currentMesh.Vertices[face[0]]
+				p10 := currentMesh.Vertices[face[1]]
+				p11 := currentMesh.Vertices[face[2]]
+				p01 := currentMesh.Vertices[face[3]]
+				n00 := math.Normal3D(currentMesh.Vertices[face[0]].Sub(center).Normalize())
+				n10 := math.Normal3D(currentMesh.Vertices[face[1]].Sub(center).Normalize())
+				n11 := math.Normal3D(currentMesh.Vertices[face[2]].Sub(center).Normalize())
+				n01 := math.Normal3D(currentMesh.Vertices[face[3]].Sub(center).Normalize())
+
+				// Create a local AABB for just this one quad
+				quadAABB := math.AABB3D{Min: p00, Max: p00}.
+					Expand(p10).
+					Expand(p11).
+					Expand(p01)
+
+				// Add a tiny bit of padding to close the "shadow holes"
+				pad := 0.001
+				quadAABB.Min = quadAABB.Min.Sub(math.Point3D{X: pad, Y: pad, Z: pad})
+				quadAABB.Max = quadAABB.Max.Add(math.Point3D{X: pad, Y: pad, Z: pad})
+				meshQuads = append(meshQuads, &geometry.BilinearQuad{
+					N00:               n00,
+					N10:               n10,
+					N11:               n11,
+					N01:               n01,
+					P00:               currentMesh.Vertices[face[0]],
+					P10:               currentMesh.Vertices[face[1]],
+					P11:               currentMesh.Vertices[face[2]],
+					P01:               currentMesh.Vertices[face[3]],
+					AABB:              quadAABB,
+					Thickness:         shapeConfig.Thickness,
+					Color:             shapeConfig.Color,
+					Shininess:         shininess,
+					SpecularIntensity: specularIntensity,
+					SpecularColor:     specularColor,
+				})
+			}
+
+			shapes = append(shapes, &geometry.SDSObject{
+				Quads:             meshQuads,
+				AABB:              totalAABB,
+				Color:             shapeConfig.Color,
+				Shininess:         shininess,
+				SpecularIntensity: specularIntensity,
+				SpecularColor:     specularColor,
+			})
+
 		default:
 			return nil, nil, nil, shading.AtmosphereConfig{}, 0, 0, 0, fmt.Errorf("unknown shape type: %s", shapeConfig.Type)
 		}
