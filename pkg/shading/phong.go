@@ -34,14 +34,35 @@ func ShadedColor(p math.Point3D, n math.Normal3D, eye math.Point3D, l Light, sha
 	}
 
 	// Filter shapes to only those that could possibly cast a shadow.
-	occluders := make([]geometry.Shape, 0)
-	//occluders := shapes
+	var occluders []geometry.Shape
+
+	// Optimization: If the shapes list contains a BVH, use it for faster culling
+	var bvh *geometry.BVH
 	for _, s := range shapes {
-		if s == shape {
-			continue
+		if b, ok := s.(*geometry.BVH); ok {
+			bvh = b
+			break
 		}
-		if s.GetAABB().Intersects(cullAABB) {
-			occluders = append(occluders, s)
+	}
+
+	if bvh != nil {
+		occluders = bvh.IntersectsShapes(cullAABB)
+		// Filter out the current shape from occluders
+		for i, o := range occluders {
+			if o == shape {
+				occluders = append(occluders[:i], occluders[i+1:]...)
+				break
+			}
+		}
+	} else {
+		occluders = make([]geometry.Shape, 0)
+		for _, s := range shapes {
+			if s == shape {
+				continue
+			}
+			if s.GetAABB().Intersects(cullAABB) {
+				occluders = append(occluders, s)
+			}
 		}
 	}
 
