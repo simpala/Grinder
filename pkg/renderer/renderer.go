@@ -39,6 +39,7 @@ type VolumeSample struct {
 type Renderer struct {
 	Camera     camera.Camera
 	Shapes     []geometry.Shape
+	BVH        *geometry.BVH
 	Light      shading.Light
 	Width      int
 	Height     int
@@ -58,11 +59,17 @@ func NewRenderer(cam camera.Camera, shapes []geometry.Shape, light shading.Light
 	if far == 0 {
 		far = 50.0
 	}
+	bvh := geometry.NewBVH(shapes)
+	// Add BVH to the scene shapes list so it can be used by other systems as a Shape
+	allShapes := append([]geometry.Shape{}, shapes...)
+	allShapes = append(allShapes, bvh)
+
 	return &Renderer{
 		Camera:     cam,
 		Shutter:    shutter,
 		Atmosphere: atmos,
-		Shapes:     shapes,
+		Shapes:     allShapes,
+		BVH:        bvh,
 		Light:      light,
 		Width:      width,
 		Height:     height,
@@ -113,6 +120,29 @@ func (r *Renderer) FitDepthPlanes() { // this should fix banding on ill fitting 
 	r.Far = maxDist * 1.1
 }
 
+func (r *Renderer) computeTileAABB(bounds ScreenBounds) math.AABB3D {
+	sx := []float64{float64(bounds.MinX) / float64(r.Width), float64(bounds.MaxX) / float64(r.Width)}
+	sy := []float64{float64(bounds.MinY) / float64(r.Height), float64(bounds.MaxY) / float64(r.Height)}
+	sz := []float64{r.Near, r.Far}
+
+	first := true
+	var result math.AABB3D
+	for _, z := range sz {
+		for _, y := range sy {
+			for _, x := range sx {
+				p := r.Camera.Project(x, y, z)
+				if first {
+					result = math.AABB3D{Min: p, Max: p}
+					first = false
+				} else {
+					result = result.Expand(p)
+				}
+			}
+		}
+	}
+	return result
+}
+
 func (r *Renderer) Render(bounds ScreenBounds) *image.RGBA {
 	tileWidth := bounds.MaxX - bounds.MinX
 	tileHeight := bounds.MaxY - bounds.MinY
@@ -129,8 +159,9 @@ func (r *Renderer) Render(bounds ScreenBounds) *image.RGBA {
 		Max: math.Point3D{X: float64(bounds.MaxX) / float64(r.Width), Y: float64(bounds.MaxY) / float64(r.Height), Z: r.Far},
 	}
 
-	primaryShapes := make([]geometry.Shape, len(r.Shapes))
-	copy(primaryShapes, r.Shapes)
+	tileAABB := r.computeTileAABB(bounds)
+	primaryShapes := r.BVH.IntersectsShapes(tileAABB)
+
 	sort.Slice(primaryShapes, func(i, j int) bool {
 		distI := primaryShapes[i].GetCenter().Sub(r.Camera.GetEye()).Length()
 		distJ := primaryShapes[j].GetCenter().Sub(r.Camera.GetEye()).Length()
