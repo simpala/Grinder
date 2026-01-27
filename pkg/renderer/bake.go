@@ -12,6 +12,7 @@ import (
 	gomath "math"
 	"os"
 	"sort"
+	"syscall"
 )
 
 // BakedAtom represents a single voxel in the baked scene.
@@ -62,6 +63,8 @@ type Header struct {
 	AtomCount  int64
 	TLASRoot   int64 // Absolute file offset to the root TLASNode
 	BakeCamera CameraData
+	VoxelSize  float32
+	Epsilon    float32
 }
 
 type blasResult struct {
@@ -163,7 +166,11 @@ func (e *BakeEngine) Indexer(tempFile string, finalFile string, totalAtoms int64
 	out, err := os.Create(finalFile)
 	if err != nil { return err }
 	defer out.Close()
-	header := Header{Magic: [4]byte{'S', 'D', 'S', 'B'}, Version: 1, AtomCount: totalAtoms}
+	header := Header{
+		Magic: [4]byte{'S', 'D', 'S', 'B'}, Version: 1, AtomCount: totalAtoms,
+		VoxelSize: float32(e.MinSize),
+		Epsilon:   float32(e.MinSize * 1.5),
+	}
 	eye := e.Camera.GetEye()
 	header.BakeCamera = CameraData{
 		Eye: [3]float32{float32(eye.X), float32(eye.Y), float32(eye.Z)},
@@ -295,6 +302,23 @@ func (e *BakeEngine) subdivideBake(aabb math.AABB3D, w io.Writer, bvh *geometry.
 	shapes := bvh.IntersectsShapes(worldAABB)
 	if len(shapes) == 0 { return }
 	if (aabb.Max.X - aabb.Min.X) < e.MinSize {
+		// Surface Pruning: discard if entirely inside a single solid shape.
+		// !IsVolumetric() identifies solid geometry (vs participating media),
+		// allowing us to hollow out the interior and keep only the shell.
+		if len(shapes) == 1 && !shapes[0].IsVolumetric() {
+			allInside := true
+			for _, c := range aabb.GetCorners() {
+				worldC := e.Camera.Project(c.X, c.Y, c.Z)
+				if !shapes[0].Contains(worldC, 0) {
+					allInside = false
+					break
+				}
+			}
+			if allInside {
+				return
+			}
+		}
+
 		center := aabb.Center()
 		worldP := e.Camera.Project(center.X, center.Y, center.Z)
 		for _, s := range shapes {
@@ -335,6 +359,7 @@ func (e *BakeEngine) subdivideBake(aabb math.AABB3D, w io.Writer, bvh *geometry.
 func (e *BakeEngine) Verify(bakedFile string) error {
 	scene, err := LoadBakedScene(bakedFile)
 	if err != nil { return err }
+	defer scene.Close()
 	fmt.Printf("Verifying baked scene %s...\nAtoms: %d, TLASRoot offset: %d\n", bakedFile, scene.Header.AtomCount, scene.Header.TLASRoot)
 	for y := 0.4; y <= 0.6; y += 0.05 {
 		for x := 0.4; x <= 0.6; x += 0.05 {
@@ -350,69 +375,223 @@ func (e *BakeEngine) Verify(bakedFile string) error {
 type BakedScene struct {
 	Header Header
 	Data   []byte
+	isMmap bool
 }
 
-func LoadBakedScene(filename string) (*BakedScene, error) {
-	data, err := os.ReadFile(filename)
-	if err != nil { return nil, err }
-	if len(data) < 80 { return nil, fmt.Errorf("file too small") }
+func (s *BakedScene) Close() error {
+	if s.isMmap {
+		return syscall.Munmap(s.Data)
+	}
+	return nil
+}
+
+func LoadBakedScene(filename string, memLimit ...int64) (*BakedScene, error) {
+	limit := int64(2 * 1024 * 1024 * 1024) // Default 2GB
+	if len(memLimit) > 0 {
+		limit = memLimit[0]
+	}
+
+	f, err := os.Open(filename)
+	if err != nil {
+		return nil, err
+	}
+	defer f.Close()
+
+	info, err := f.Stat()
+	if err != nil {
+		return nil, err
+	}
+	size := info.Size()
+
+	var data []byte
+	isMmap := false
+
+	if size < limit {
+		data, err = os.ReadFile(filename)
+		if err != nil {
+			return nil, err
+		}
+	} else {
+		// Use syscall.Mmap to provide the requested consistent []byte access.
+		// golang.org/x/exp/mmap was considered but does not expose a raw byte slice.
+		data, err = syscall.Mmap(int(f.Fd()), 0, int(size), syscall.PROT_READ, syscall.MAP_SHARED)
+		if err != nil {
+			return nil, err
+		}
+		isMmap = true
+	}
+
+	if len(data) < 84 {
+		if isMmap {
+			syscall.Munmap(data)
+		}
+		return nil, fmt.Errorf("file too small")
+	}
+
 	var header Header
-	if err := binary.Read(bytes.NewReader(data), binary.LittleEndian, &header); err != nil { return nil, err }
-	return &BakedScene{Header: header, Data: data}, nil
+	if err := binary.Read(bytes.NewReader(data), binary.LittleEndian, &header); err != nil {
+		if isMmap {
+			syscall.Munmap(data)
+		}
+		return nil, err
+	}
+	return &BakedScene{Header: header, Data: data, isMmap: isMmap}, nil
 }
 
 func (s *BakedScene) Intersect(ray math.Ray) (bool, BakedAtom) { return s.intersectTLAS(s.Header.TLASRoot, ray) }
 
+func (s *BakedScene) getTLASNode(offset int64) TLASNode {
+	data := s.Data[offset:]
+	return TLASNode{
+		Min: [3]float32{
+			gomath.Float32frombits(binary.LittleEndian.Uint32(data[0:4])),
+			gomath.Float32frombits(binary.LittleEndian.Uint32(data[4:8])),
+			gomath.Float32frombits(binary.LittleEndian.Uint32(data[8:12])),
+		},
+		Max: [3]float32{
+			gomath.Float32frombits(binary.LittleEndian.Uint32(data[12:16])),
+			gomath.Float32frombits(binary.LittleEndian.Uint32(data[16:20])),
+			gomath.Float32frombits(binary.LittleEndian.Uint32(data[20:24])),
+		},
+		BLASOffset: int64(binary.LittleEndian.Uint64(data[24:32])),
+		IsLeaf:     int32(binary.LittleEndian.Uint32(data[32:36])),
+		Left:       int32(binary.LittleEndian.Uint32(data[36:40])),
+		Right:      int32(binary.LittleEndian.Uint32(data[40:44])),
+		Padding:    int32(binary.LittleEndian.Uint32(data[44:48])),
+	}
+}
+
+func (s *BakedScene) getBLASNode(offset int64) BLASNode {
+	data := s.Data[offset:]
+	return BLASNode{
+		Min: [3]float32{
+			gomath.Float32frombits(binary.LittleEndian.Uint32(data[0:4])),
+			gomath.Float32frombits(binary.LittleEndian.Uint32(data[4:8])),
+			gomath.Float32frombits(binary.LittleEndian.Uint32(data[8:12])),
+		},
+		Max: [3]float32{
+			gomath.Float32frombits(binary.LittleEndian.Uint32(data[12:16])),
+			gomath.Float32frombits(binary.LittleEndian.Uint32(data[16:20])),
+			gomath.Float32frombits(binary.LittleEndian.Uint32(data[20:24])),
+		},
+		AtomOffset: int64(binary.LittleEndian.Uint64(data[24:32])),
+		AtomCount:  int32(binary.LittleEndian.Uint32(data[32:36])),
+		Left:       int32(binary.LittleEndian.Uint32(data[36:40])),
+		Right:      int32(binary.LittleEndian.Uint32(data[40:44])),
+		Padding:    int32(binary.LittleEndian.Uint32(data[44:48])),
+	}
+}
+
+func (s *BakedScene) getBakedAtom(offset int64) BakedAtom {
+	data := s.Data[offset:]
+	return BakedAtom{
+		Pos: [3]float32{
+			gomath.Float32frombits(binary.LittleEndian.Uint32(data[0:4])),
+			gomath.Float32frombits(binary.LittleEndian.Uint32(data[4:8])),
+			gomath.Float32frombits(binary.LittleEndian.Uint32(data[8:12])),
+		},
+		HalfExtent: gomath.Float32frombits(binary.LittleEndian.Uint32(data[12:16])),
+		Normal:     binary.LittleEndian.Uint32(data[16:20]),
+		Albedo:     [3]uint8{data[20], data[21], data[22]},
+		MaterialID: data[23],
+		LightDir:   binary.LittleEndian.Uint32(data[24:28]),
+		LightColor: [3]uint8{data[28], data[29], data[30]},
+		Padding:    data[31],
+	}
+}
+
 func (s *BakedScene) intersectTLAS(offset int64, ray math.Ray) (bool, BakedAtom) {
-	if offset < 0 || offset+48 > int64(len(s.Data)) { return false, BakedAtom{} }
-	var node TLASNode
-	binary.Read(bytes.NewReader(s.Data[offset:]), binary.LittleEndian, &node)
+	if offset < 0 || offset+48 > int64(len(s.Data)) {
+		return false, BakedAtom{}
+	}
+	node := s.getTLASNode(offset)
 	aabb := math.AABB3D{Min: math.Point3D{X: float64(node.Min[0]), Y: float64(node.Min[1]), Z: float64(node.Min[2])}, Max: math.Point3D{X: float64(node.Max[0]), Y: float64(node.Max[1]), Z: float64(node.Max[2])}}
-	if _, _, ok := aabb.IntersectRay(ray); !ok { return false, BakedAtom{} }
-	if node.IsLeaf == 1 { return s.intersectBLAS(node.BLASOffset, node.BLASOffset, ray) }
+	if _, _, ok := aabb.IntersectRay(ray); !ok {
+		return false, BakedAtom{}
+	}
+	if node.IsLeaf == 1 {
+		return s.intersectBLAS(node.BLASOffset, node.BLASOffset, ray)
+	}
 	var hitL, hitR bool
 	var atomL, atomR BakedAtom
-	if node.Left != -1 { hitL, atomL = s.intersectTLAS(s.Header.TLASRoot + int64(node.Left)*48, ray) }
-	if node.Right != -1 { hitR, atomR = s.intersectTLAS(s.Header.TLASRoot + int64(node.Right)*48, ray) }
+	if node.Left != -1 {
+		hitL, atomL = s.intersectTLAS(s.Header.TLASRoot+int64(node.Left)*48, ray)
+	}
+	if node.Right != -1 {
+		hitR, atomR = s.intersectTLAS(s.Header.TLASRoot+int64(node.Right)*48, ray)
+	}
 	if hitL && hitR {
 		dL := math.Point3D{X: float64(atomL.Pos[0]), Y: float64(atomL.Pos[1]), Z: float64(atomL.Pos[2])}.Sub(ray.Origin).LengthSquared()
 		dR := math.Point3D{X: float64(atomR.Pos[0]), Y: float64(atomR.Pos[1]), Z: float64(atomR.Pos[2])}.Sub(ray.Origin).LengthSquared()
-		if dL < dR { return true, atomL } else { return true, atomR }
+		if dL < dR {
+			return true, atomL
+		} else {
+			return true, atomR
+		}
 	}
-	if hitL { return true, atomL }
+	if hitL {
+		return true, atomL
+	}
 	return hitR, atomR
 }
 
 func (s *BakedScene) intersectBLAS(baseOffset int64, offset int64, ray math.Ray) (bool, BakedAtom) {
-	if offset < 0 || offset+48 > int64(len(s.Data)) { return false, BakedAtom{} }
-	var node BLASNode
-	binary.Read(bytes.NewReader(s.Data[offset:]), binary.LittleEndian, &node)
+	if offset < 0 || offset+48 > int64(len(s.Data)) {
+		return false, BakedAtom{}
+	}
+	node := s.getBLASNode(offset)
 	aabb := math.AABB3D{Min: math.Point3D{X: float64(node.Min[0]), Y: float64(node.Min[1]), Z: float64(node.Min[2])}, Max: math.Point3D{X: float64(node.Max[0]), Y: float64(node.Max[1]), Z: float64(node.Max[2])}}
-	if _, _, ok := aabb.IntersectRay(ray); !ok { return false, BakedAtom{} }
+	if _, _, ok := aabb.IntersectRay(ray); !ok {
+		return false, BakedAtom{}
+	}
 	if node.AtomCount > 0 {
-		if node.AtomOffset < 0 || node.AtomOffset+int64(node.AtomCount)*32 > int64(len(s.Data)) { return false, BakedAtom{} }
+		if node.AtomOffset < 0 || node.AtomOffset+int64(node.AtomCount)*32 > int64(len(s.Data)) {
+			return false, BakedAtom{}
+		}
 		var nearest BakedAtom
 		found, minDist := false, 1e18
-		reader := bytes.NewReader(s.Data[node.AtomOffset:])
 		for i := 0; i < int(node.AtomCount); i++ {
-			var atom BakedAtom
-			binary.Read(reader, binary.LittleEndian, &atom)
-			atomAABB := math.AABB3D{Min: math.Point3D{X: float64(atom.Pos[0] - atom.HalfExtent), Y: float64(atom.Pos[1] - atom.HalfExtent), Z: float64(atom.Pos[2] - atom.HalfExtent)}, Max: math.Point3D{X: float64(atom.Pos[0] + atom.HalfExtent), Y: float64(atom.Pos[1] + atom.HalfExtent), Z: float64(atom.Pos[2] + atom.HalfExtent)}}
+			atomOffset := node.AtomOffset + int64(i)*32
+			// Lazy Decoding: extract only Pos and HalfExtent (first 16 bytes) for the AABB check.
+			atomData := s.Data[atomOffset:]
+			posX := gomath.Float32frombits(binary.LittleEndian.Uint32(atomData[0:4]))
+			posY := gomath.Float32frombits(binary.LittleEndian.Uint32(atomData[4:8]))
+			posZ := gomath.Float32frombits(binary.LittleEndian.Uint32(atomData[8:12]))
+			halfExtent := gomath.Float32frombits(binary.LittleEndian.Uint32(atomData[12:16]))
+
+			atomAABB := math.AABB3D{
+				Min: math.Point3D{X: float64(posX - halfExtent), Y: float64(posY - halfExtent), Z: float64(posZ - halfExtent)},
+				Max: math.Point3D{X: float64(posX + halfExtent), Y: float64(posY + halfExtent), Z: float64(posZ + halfExtent)},
+			}
 			if tmin, _, ok := atomAABB.IntersectRay(ray); ok {
-				if tmin < minDist { minDist, nearest, found = tmin, atom, true }
+				if tmin < minDist {
+					minDist = tmin
+					nearest = s.getBakedAtom(atomOffset)
+					found = true
+				}
 			}
 		}
 		return found, nearest
 	}
 	var hitL, hitR bool
 	var atomL, atomR BakedAtom
-	if node.Left != -1 { hitL, atomL = s.intersectBLAS(baseOffset, baseOffset + int64(node.Left)*48, ray) }
-	if node.Right != -1 { hitR, atomR = s.intersectBLAS(baseOffset, baseOffset + int64(node.Right)*48, ray) }
+	if node.Left != -1 {
+		hitL, atomL = s.intersectBLAS(baseOffset, baseOffset+int64(node.Left)*48, ray)
+	}
+	if node.Right != -1 {
+		hitR, atomR = s.intersectBLAS(baseOffset, baseOffset+int64(node.Right)*48, ray)
+	}
 	if hitL && hitR {
 		dL := math.Point3D{X: float64(atomL.Pos[0]), Y: float64(atomL.Pos[1]), Z: float64(atomL.Pos[2])}.Sub(ray.Origin).LengthSquared()
 		dR := math.Point3D{X: float64(atomR.Pos[0]), Y: float64(atomR.Pos[1]), Z: float64(atomR.Pos[2])}.Sub(ray.Origin).LengthSquared()
-		if dL < dR { return true, atomL } else { return true, atomR }
+		if dL < dR {
+			return true, atomL
+		} else {
+			return true, atomR
+		}
 	}
-	if hitL { return true, atomL }
+	if hitL {
+		return true, atomL
+	}
 	return hitR, atomR
 }

@@ -23,13 +23,15 @@ func main() {
 	width := flag.Int("width", 800, "image width")
 	height := flag.Int("height", 800, "image height")
 	samples := flag.Int("samples", 4, "samples per pixel")
+	memLimit := flag.Int64("memlimit", 2048, "memory limit in MB for in-memory loading (default 2GB)")
 	flag.Parse()
 
-	scene, err := renderer.LoadBakedScene(*bakedPath)
+	scene, err := renderer.LoadBakedScene(*bakedPath, *memLimit*1024*1024)
 	if err != nil {
 		fmt.Printf("Error loading baked scene: %v\n", err)
 		os.Exit(1)
 	}
+	defer scene.Close()
 
 	var cam camera.Camera
 	var near, far float64
@@ -141,7 +143,8 @@ func trace(ray math.Ray, scene *renderer.BakedScene, depth int, prng *math.XorSh
 	var indirect math.Point3D
 	if depth < 2 {
 		nextDir := sampleHemisphere(normal, prng)
-		nextRay := math.Ray{Origin: pos.Add(normal.Mul(1e-3)), Direction: nextDir}
+		nextRayOrigin := pos.Add(normal.Mul(float64(scene.Header.Epsilon)))
+		nextRay := math.Ray{Origin: nextRayOrigin, Direction: nextDir}
 		indirect = trace(nextRay, scene, depth+1, prng).Mul(0.5)
 	}
 
