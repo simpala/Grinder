@@ -386,19 +386,19 @@ func (e *BakeEngine) subdivideBake(aabb math.AABB3D, w io.Writer, bvh *geometry.
 				//checkP := worldP.Add(normal.ToVector().Mul(1e-4))
 				//attenuation := shading.CalculateShadowAttenuation(checkP, e.Light.Position, e.Shapes, e.Light.Radius, 0)
 				//lIntensity := e.Light.Intensity * attenuation
-				lIntensity := e.Light.Intensity // we dont ever want to bake approximated shadows.
-				pCorner := e.Camera.Project(aabb.Max.X, aabb.Max.Y, aabb.Max.Z)
-				halfExtent := pCorner.Sub(worldP).Length()
-				atom := BakedAtom{
-					Pos:        [3]float32{float32(worldP.X), float32(worldP.Y), float32(worldP.Z)},
-					HalfExtent: float32(halfExtent),
-					Normal:     OctEncode(normal.ToVector()),
-					Albedo:     [3]uint8{albedo.R, albedo.G, albedo.B}, MaterialID: id,
-					LightDir:   OctEncode(lightDir),
-					LightColor: [3]uint8{uint8(gomath.Min(255, 255*lIntensity)), uint8(gomath.Min(255, 255*lIntensity)), uint8(gomath.Min(255, 255*lIntensity))},
-				}
-				atom.Write(w)
-				*atomCount++
+			lIntensity := e.Light.Intensity // we dont ever want to bake approximated shadows.
+			pCorner := e.Camera.Project(aabb.Max.X, aabb.Max.Y, aabb.Max.Z)
+			halfExtent := pCorner.Sub(worldP).Length()
+			atom := BakedAtom{
+				Pos:        [3]float32{float32(worldP.X), float32(worldP.Y), float32(worldP.Z)},
+				HalfExtent: float32(halfExtent),
+				Normal:     OctEncode(normal.ToVector()),
+				Albedo:     [3]uint8{albedo.R, albedo.G, albedo.B}, MaterialID: id,
+				LightDir:   OctEncode(lightDir),
+				LightColor: [3]uint8{uint8(gomath.Min(255, 255*lIntensity)), uint8(gomath.Min(255, 255*lIntensity)), uint8(gomath.Min(255, 255*lIntensity))},
+			}
+			atom.Write(w)
+			*atomCount++
 			}
 		}
 		return
@@ -626,9 +626,11 @@ func (s *BakedScene) intersectBLAS(baseOffset int64, offset int64, ray math.Ray)
 			posZ := gomath.Float32frombits(binary.LittleEndian.Uint32(atomData[8:12]))
 			halfExtent := gomath.Float32frombits(binary.LittleEndian.Uint32(atomData[12:16]))
 
+			// Fatten the AABB slightly to close cracks between atoms.
+			fatExtent := halfExtent * 1.01
 			atomAABB := math.AABB3D{
-				Min: math.Point3D{X: float64(posX - halfExtent), Y: float64(posY - halfExtent), Z: float64(posZ - halfExtent)},
-				Max: math.Point3D{X: float64(posX + halfExtent), Y: float64(posY + halfExtent), Z: float64(posZ + halfExtent)},
+				Min: math.Point3D{X: float64(posX - fatExtent), Y: float64(posY - fatExtent), Z: float64(posZ - fatExtent)},
+				Max: math.Point3D{X: float64(posX + fatExtent), Y: float64(posY + fatExtent), Z: float64(posZ + fatExtent)},
 			}
 			if tmin, _, ok := atomAABB.IntersectRay(ray); ok {
 				if tmin < minDist {
@@ -661,4 +663,80 @@ func (s *BakedScene) intersectBLAS(baseOffset int64, offset int64, ray math.Ray)
 		return true, atomL
 	}
 	return hitR, atomR
+}
+
+func (s *BakedScene) IntersectP(ray math.Ray) bool {
+	return s.intersectTLASP(s.Header.TLASRoot, ray)
+}
+
+func (s *BakedScene) intersectTLASP(offset int64, ray math.Ray) bool {
+	if offset < 0 || offset+48 > int64(len(s.Data)) {
+		return false
+	}
+	node := s.getTLASNode(offset)
+	aabb := math.AABB3D{Min: math.Point3D{X: float64(node.Min[0]), Y: float64(node.Min[1]), Z: float64(node.Min[2])}, Max: math.Point3D{X: float64(node.Max[0]), Y: float64(node.Max[1]), Z: float64(node.Max[2])}}
+	if _, _, ok := aabb.IntersectRay(ray); !ok {
+		return false
+	}
+	if node.IsLeaf == 1 {
+		return s.intersectBLASP(node.BLASOffset, node.BLASOffset, ray)
+	}
+	if node.Left != -1 {
+		if s.intersectTLASP(s.Header.TLASRoot+int64(node.Left)*48, ray) {
+			return true
+		}
+	}
+	if node.Right != -1 {
+		if s.intersectTLASP(s.Header.TLASRoot+int64(node.Right)*48, ray) {
+			return true
+		}
+	}
+	return false
+}
+
+func (s *BakedScene) intersectBLASP(baseOffset int64, offset int64, ray math.Ray) bool {
+	if offset < 0 || offset+48 > int64(len(s.Data)) {
+		return false
+	}
+	node := s.getBLASNode(offset)
+	aabb := math.AABB3D{Min: math.Point3D{X: float64(node.Min[0]), Y: float64(node.Min[1]), Z: float64(node.Min[2])}, Max: math.Point3D{X: float64(node.Max[0]), Y: float64(node.Max[1]), Z: float64(node.Max[2])}}
+	if _, _, ok := aabb.IntersectRay(ray); !ok {
+		return false
+	}
+	if node.AtomCount > 0 {
+		if node.AtomOffset < 0 || node.AtomOffset+int64(node.AtomCount)*32 > int64(len(s.Data)) {
+			return false
+		}
+		for i := 0; i < int(node.AtomCount); i++ {
+			atomOffset := node.AtomOffset + int64(i)*32
+			// Lazy Decoding: extract only Pos and HalfExtent (first 16 bytes) for the AABB check.
+			atomData := s.Data[atomOffset:]
+			posX := gomath.Float32frombits(binary.LittleEndian.Uint32(atomData[0:4]))
+			posY := gomath.Float32frombits(binary.LittleEndian.Uint32(atomData[4:8]))
+			posZ := gomath.Float32frombits(binary.LittleEndian.Uint32(atomData[8:12]))
+			halfExtent := gomath.Float32frombits(binary.LittleEndian.Uint32(atomData[12:16]))
+
+			// Fatten the AABB slightly to close cracks between atoms.
+			fatExtent := halfExtent * 1.01
+			atomAABB := math.AABB3D{
+				Min: math.Point3D{X: float64(posX - fatExtent), Y: float64(posY - fatExtent), Z: float64(posZ - fatExtent)},
+				Max: math.Point3D{X: float64(posX + fatExtent), Y: float64(posY + fatExtent), Z: float64(posZ + fatExtent)},
+			}
+			if _, _, ok := atomAABB.IntersectRay(ray); ok {
+				return true
+			}
+		}
+		return false
+	}
+	if node.Left != -1 {
+		if s.intersectBLASP(baseOffset, baseOffset+int64(node.Left)*48, ray) {
+			return true
+		}
+	}
+	if node.Right != -1 {
+		if s.intersectBLASP(baseOffset, baseOffset+int64(node.Right)*48, ray) {
+			return true
+		}
+	}
+	return false
 }
