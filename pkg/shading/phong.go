@@ -66,7 +66,7 @@ func ShadedColor(p math.Point3D, n math.Normal3D, eye math.Point3D, l Light, sha
 		}
 	}
 
-	shadowAttenuation := calculateShadowAttenuation(checkP, l.Position, occluders, l.Radius, tSample)
+	shadowAttenuation := CalculateShadowAttenuation(checkP, l.Position, occluders, l.Radius, tSample)
 	// Diffuse (Lambert) component
 	dot := n.Dot(lightDir)
 	diffuseFactor := gomath.Max(0.15, dot*l.Intensity*shadowAttenuation) // Ambient term is 0.15
