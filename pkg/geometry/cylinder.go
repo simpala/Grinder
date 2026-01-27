@@ -32,17 +32,8 @@ func (c Cylinder3D) Contains(p math.Point3D, t float64) bool {
 }
 
 func (c Cylinder3D) Intersects(aabb math.AABB3D) bool {
-	// Check Y-range first
-	if aabb.Min.Y > c.Center.Y+c.Height || aabb.Max.Y < c.Center.Y {
-		return false
-	}
-
-	// Check circle-AABB intersection in XZ plane
-	closestX := gomath.Max(aabb.Min.X, gomath.Min(c.Center.X, aabb.Max.X))
-	closestZ := gomath.Max(aabb.Min.Z, gomath.Min(c.Center.Z, aabb.Max.Z))
-
-	dx, dz := closestX-c.Center.X, closestZ-c.Center.Z
-	return (dx*dx + dz*dz) <= c.Radius*c.Radius
+	// Account for motion by using the full motion-expanded AABB
+	return c.GetAABB().Intersects(aabb)
 }
 
 func (c Cylinder3D) NormalAtPoint(p math.Point3D, t float64) math.Normal3D {

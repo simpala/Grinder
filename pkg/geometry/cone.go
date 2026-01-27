@@ -40,29 +40,8 @@ func (c Cone3D) Contains(p math.Point3D, t float64) bool {
 }
 
 func (c Cone3D) Intersects(aabb math.AABB3D) bool {
-	// 1. Check Y-range
-	if aabb.Min.Y > c.Center.Y+c.Height || aabb.Max.Y < c.Center.Y {
-		return false
-	}
-
-	// 2. Conservative Check: Use the cylinder AABB intersection logic
-	// We treat it as a cylinder of its base radius for the broad phase.
-	closestX := gomath.Max(aabb.Min.X, gomath.Min(c.Center.X, aabb.Max.X))
-	closestZ := gomath.Max(aabb.Min.Z, gomath.Min(c.Center.Z, aabb.Max.Z))
-
-	dx, dz := closestX-c.Center.X, closestZ-c.Center.Z
-	// If it doesn't even hit the base cylinder, it doesn't hit the cone
-	if (dx*dx + dz*dz) > c.Radius*c.Radius {
-		return false
-	}
-
-	// 3. Fine-grained check: Check if the closest point on AABB is inside the radius at that Y
-	// Use the Y-level of the AABB closest to the base
-	targetY := gomath.Max(aabb.Min.Y, c.Center.Y)
-	hRatio := (targetY - c.Center.Y) / c.Height
-	currentRadius := c.Radius * (1.0 - hRatio)
-
-	return (dx*dx + dz*dz) <= currentRadius*currentRadius
+	// Account for motion by using the full motion-expanded AABB
+	return c.GetAABB().Intersects(aabb)
 }
 
 func (c Cone3D) NormalAtPoint(p math.Point3D, t float64) math.Normal3D {

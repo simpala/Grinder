@@ -31,14 +31,8 @@ func (s Sphere3D) Contains(p math.Point3D, t float64) bool {
 
 // Intersects checks if the sphere intersects with an AABB.
 func (s Sphere3D) Intersects(aabb math.AABB3D) bool {
-	closestX := gomath.Max(aabb.Min.X, gomath.Min(s.Center.X, aabb.Max.X))
-	closestY := gomath.Max(aabb.Min.Y, gomath.Min(s.Center.Y, aabb.Max.Y))
-	closestZ := gomath.Max(aabb.Min.Z, gomath.Min(s.Center.Z, aabb.Max.Z))
-
-	p := math.Point3D{X: closestX, Y: closestY, Z: closestZ}
-	dp := p.Sub(s.Center)
-
-	return dp.Dot(dp) <= s.Radius*s.Radius
+	// For simplicity and to correctly handle motion blur, check the full motion block AABB.
+	return s.GetAABB().Intersects(aabb)
 }
 
 // // NormalAtPoint returns the normal vector at a given point on the sphere's surface.

@@ -16,20 +16,17 @@ type VolumeBox struct {
 	Density           float64
 }
 
-func (b VolumeBox) Contains(p math.Point3D) bool {
+func (b VolumeBox) Contains(p math.Point3D, t float64) bool {
 	return p.X >= b.Min.X && p.X <= b.Max.X &&
 		p.Y >= b.Min.Y && p.Y <= b.Max.Y &&
 		p.Z >= b.Min.Z && p.Z <= b.Max.Z
 }
 
 func (b VolumeBox) Intersects(aabb math.AABB3D) bool {
-	// Standard AABB-AABB intersection
-	return (b.Min.X <= aabb.Max.X && b.Max.X >= aabb.Min.X) &&
-		(b.Min.Y <= aabb.Max.Y && b.Max.Y >= aabb.Min.Y) &&
-		(b.Min.Z <= aabb.Max.Z && b.Max.Z >= aabb.Min.Z)
+	return b.GetAABB().Intersects(aabb)
 }
 
-func (b VolumeBox) NormalAtPoint(p math.Point3D) math.Normal3D {
+func (b VolumeBox) NormalAtPoint(p math.Point3D, t float64) math.Normal3D {
 	// Find which face the point is closest to
 	eps := 0.0001
 	if gomath.Abs(p.X-b.Min.X) < eps {
