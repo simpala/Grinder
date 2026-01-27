@@ -1,3 +1,6 @@
 render.png
 render_headless
+bake
+trace
+*.bin
 grinder-bench-headless

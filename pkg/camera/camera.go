@@ -44,3 +44,10 @@ func (c *PerspectiveCamera) Project(sx, sy, z float64) math.Point3D {
 func (c *PerspectiveCamera) GetEye() math.Point3D {
 	return c.Position
 }
+
+func (c *PerspectiveCamera) GetForward() math.Point3D { return c.Forward }
+func (c *PerspectiveCamera) GetUp() math.Point3D      { return c.Up }
+func (c *PerspectiveCamera) GetAspect() float64      { return c.Aspect }
+func (c *PerspectiveCamera) GetFov() float64 {
+	return 2.0 * gomath.Atan(c.FovScale) * 180.0 / gomath.Pi
+}

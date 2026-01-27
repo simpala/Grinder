@@ -3,7 +3,9 @@ package main
 import (
 	"flag"
 	"fmt"
+	"grinder/pkg/camera"
 	"grinder/pkg/loader"
+	"grinder/pkg/math"
 	"grinder/pkg/renderer"
 	"os"
 )
@@ -32,7 +34,16 @@ func main() {
 	fmt.Printf("Baking scene: %s\n", *scenePath)
 	fmt.Printf("Voxel MinSize: %f, Near: %f, Far: %f\n", *minSize, near, far)
 
-	engine := renderer.NewBakeEngine(cam, shapes, *light, 1024, 1024, *minSize, near, far, shutter)
+	// Extract camera info for header
+	var target, up math.Point3D
+	var fov float64
+	if pc, ok := cam.(*camera.PerspectiveCamera); ok {
+		target = pc.GetEye().Add(pc.GetForward())
+		up = pc.GetUp()
+		fov = pc.GetFov()
+	}
+
+	engine := renderer.NewBakeEngine(cam, shapes, *light, 1024, 1024, *minSize, near, far, shutter, target, up, fov)
 	err = engine.Bake(*tempFile, *outFile)
 	if err != nil {
 		fmt.Printf("Error during bake: %v\n", err)
