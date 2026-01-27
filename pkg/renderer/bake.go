@@ -12,7 +12,9 @@ import (
 	gomath "math"
 	"os"
 	"sort"
-	"syscall"
+	"unsafe"
+
+	"golang.org/x/exp/mmap"
 )
 
 // BakedAtom represents a single voxel in the baked scene.
@@ -375,12 +377,12 @@ func (e *BakeEngine) Verify(bakedFile string) error {
 type BakedScene struct {
 	Header Header
 	Data   []byte
-	isMmap bool
+	closer io.Closer
 }
 
 func (s *BakedScene) Close() error {
-	if s.isMmap {
-		return syscall.Munmap(s.Data)
+	if s.closer != nil {
+		return s.closer.Close()
 	}
 	return nil
 }
@@ -404,7 +406,7 @@ func LoadBakedScene(filename string, memLimit ...int64) (*BakedScene, error) {
 	size := info.Size()
 
 	var data []byte
-	isMmap := false
+	var closer io.Closer
 
 	if size < limit {
 		data, err = os.ReadFile(filename)
@@ -412,30 +414,31 @@ func LoadBakedScene(filename string, memLimit ...int64) (*BakedScene, error) {
 			return nil, err
 		}
 	} else {
-		// Use syscall.Mmap to provide the requested consistent []byte access.
-		// golang.org/x/exp/mmap was considered but does not expose a raw byte slice.
-		data, err = syscall.Mmap(int(f.Fd()), 0, int(size), syscall.PROT_READ, syscall.MAP_SHARED)
+		r, err := mmap.Open(filename)
 		if err != nil {
 			return nil, err
 		}
-		isMmap = true
+		closer = r
+		// Use unsafe to access the unexported data []byte field of mmap.ReaderAt.
+		// This provides the requested consistent []byte access portably.
+		data = *(*[]byte)(unsafe.Pointer(r))
 	}
 
 	if len(data) < 84 {
-		if isMmap {
-			syscall.Munmap(data)
+		if closer != nil {
+			closer.Close()
 		}
 		return nil, fmt.Errorf("file too small")
 	}
 
 	var header Header
 	if err := binary.Read(bytes.NewReader(data), binary.LittleEndian, &header); err != nil {
-		if isMmap {
-			syscall.Munmap(data)
+		if closer != nil {
+			closer.Close()
 		}
 		return nil, err
 	}
-	return &BakedScene{Header: header, Data: data, isMmap: isMmap}, nil
+	return &BakedScene{Header: header, Data: data, closer: closer}, nil
 }
 
 func (s *BakedScene) Intersect(ray math.Ray) (bool, BakedAtom) { return s.intersectTLAS(s.Header.TLASRoot, ray) }
