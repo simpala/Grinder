@@ -25,7 +25,7 @@ type Light struct {
 	Samples   int // New field
 }
 
-func calculateShadowAttenuation(p, lightPos math.Point3D, occluders []geometry.Shape, lightRadius float64, tSample float64) float64 {
+func CalculateShadowAttenuation(p, lightPos math.Point3D, occluders []geometry.Shape, lightRadius float64, tSample float64) float64 {
 	const stepSize = 0.5 // Double the step size (0.5 instead of 0.25) for 2x speed
 	vecToLight := lightPos.Sub(p)
 	distToLight := vecToLight.Length()
